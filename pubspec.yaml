@@ -1,9 +1,12 @@
 name: flavor_cli
 description: Production-grade Flutter flavor automation CLI
-version: 0.0.1
+version: 0.0.2
 repository: https://github.com/Moo-Meshrif/flavor_cli
 homepage: https://github.com/Moo-Meshrif/flavor_cli
 issue_tracker: https://github.com/Moo-Meshrif/flavor_cli/issues
+platforms:
+  android:
+  ios:
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

@@ -126,17 +126,8 @@ class FirebaseCommand {
       }
     }
 
-    // 5. Choose Platforms
-    final platforms = _log.chooseAny(
-      '👉 Select target platforms for all flavors (Space to select, Enter to confirm):',
-      choices: ['android', 'ios', 'macos', 'web', 'windows'],
-      defaultValues: ['android', 'ios'],
-    );
-
-    if (platforms.isEmpty) {
-      _log.error('❌ You must select at least one platform.');
-      return;
-    }
+    // 5. Target Platforms (Android & iOS)
+    final platforms = ['android', 'ios'];
 
     final platformsString = platforms.join(',');
 
