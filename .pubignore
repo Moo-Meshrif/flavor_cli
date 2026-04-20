@@ -1,0 +1,10 @@
+# Files to exclude from the published package on pub.dev
+
+# Local development artifacts
+scratch/
+scripts/run.sh
+.fvm/
+.fvmrc
+.vscode/
+.DS_Store
+**/.DS_Store

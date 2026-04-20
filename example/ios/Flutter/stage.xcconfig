@@ -1,0 +1,5 @@
+#include "Generated.xcconfig"
+FLUTTER_TARGET=lib/main/main_stage.dart
+FLUTTER_FLAVOR=stage
+BUNDLE_ID_SUFFIX=.stage
+APP_NAME=flavor-stage

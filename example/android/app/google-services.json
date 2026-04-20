@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "1022539094494",
+    "project_id": "flavor-test-7744d",
+    "storage_bucket": "flavor-test-7744d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1022539094494:android:b00a264d1c4cfde630a54f",
+        "android_client_info": {
+          "package_name": "co.flavor.com"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfPbK_eFTGrTYt3GaCCuzgS4GwHjK5kYY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1022539094494:android:ffb6552193ccb54430a54f",
+        "android_client_info": {
+          "package_name": "co.flavor.com.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfPbK_eFTGrTYt3GaCCuzgS4GwHjK5kYY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1022539094494:android:ed32823c3779853830a54f",
+        "android_client_info": {
+          "package_name": "co.flavor.com.stage"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBfPbK_eFTGrTYt3GaCCuzgS4GwHjK5kYY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

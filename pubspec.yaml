@@ -1,0 +1,27 @@
+name: flavor_cli
+description: Production-grade Flutter flavor automation CLI
+version: 0.0.1
+repository: https://github.com/Moo-Meshrif/flavor_cli
+homepage: https://github.com/Moo-Meshrif/flavor_cli
+issue_tracker: https://github.com/Moo-Meshrif/flavor_cli/issues
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+false_secrets:
+  - /example/android/app/google-services.json
+  - /example/ios/Runner/GoogleService-Info.plist
+  - /example/lib/firebase_options_dev.dart
+  - /example/lib/firebase_options_prod.dart
+  - /example/lib/firebase_options_stage.dart
+
+dependencies:
+  args: ^2.4.2
+  mason_logger: ^0.2.5
+  path: ^1.9.0
+
+executables:
+  flavor_cli:
+
+dev_dependencies:
+  test: ^1.24.0

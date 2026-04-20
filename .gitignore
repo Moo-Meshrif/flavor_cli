@@ -1,0 +1,18 @@
+
+# FVM Version Cache
+.fvm/
+.fvmrc
+
+# Flutter/Dart/Pub related
+.dart_tool/
+
+#vscode
+.vscode/
+lib/.DS_Store
+.DS_Store
+
+# Local artifacts
+scratch/
+
+#build
+build/

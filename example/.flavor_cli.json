@@ -1,0 +1,21 @@
+{
+  "flavors": [
+    "dev",
+    "stage",
+    "prod"
+  ],
+  "app_name": "flavor",
+  "fields": {
+    "url": "String"
+  },
+  "app_config_path": "lib/app_config.dart",
+  "use_separate_mains": true,
+  "use_suffix": true,
+  "android": {
+    "application_id": "co.flavor.com"
+  },
+  "ios": {
+    "bundle_id": "co.flavor.com"
+  },
+  "production_flavor": "prod"
+}
