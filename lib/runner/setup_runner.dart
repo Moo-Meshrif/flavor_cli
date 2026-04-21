@@ -180,10 +180,10 @@ class SetupRunner {
     }
   }
 
-  void reset() {
+  void reset([bool excludeValidation = false]) {
     final log = _log;
     final root = ConfigService.root;
-    final config = ConfigService.load();
+    final config = ConfigService.load(excludeValidation);
 
     log.info('🧹 Starting full project reset...');
 

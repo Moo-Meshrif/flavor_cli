@@ -21,7 +21,7 @@ class ResetCommand {
     }
 
     try {
-      SetupRunner(logger: _log).reset();
+      SetupRunner(logger: _log).reset(true);
     } catch (e) {
       _log.error('❌ Failed to reset project: $e');
     }

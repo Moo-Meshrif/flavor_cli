@@ -45,7 +45,7 @@ class ConfigService {
   // ========================
   // LOAD CONFIG
   // ========================
-  static FlavorConfig load() {
+  static FlavorConfig load([bool excludeValidation = false]) {
     final file = File(_configPath);
     if (!file.existsSync()) {
       throw Exception(
@@ -55,6 +55,10 @@ class ConfigService {
     try {
       final content = file.readAsStringSync();
       final jsonMap = jsonDecode(content) as Map<String, dynamic>;
+
+      if (excludeValidation) {
+        return FlavorConfig.fromJson(jsonMap);
+      }
 
       // Will throw FormatException with properly formatted error if invalid
       return ConfigValidator.validate(jsonMap);

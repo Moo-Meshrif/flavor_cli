@@ -31,6 +31,8 @@ class FileService {
     final fields = ConfigService.load().fields;
 
     final buffer = StringBuffer();
+    buffer.writeln("// GENERATED CODE - DO NOT MODIFY BY HAND");
+    buffer.writeln();
     buffer.writeln("enum Flavor { ${flavors.join(', ')} }");
     buffer.writeln();
     buffer.writeln("class AppConfig {");
@@ -43,7 +45,6 @@ class FileService {
     buffer.writeln();
     buffer.writeln("  static void init(Flavor f) {");
     buffer.writeln("    flavor = f;");
-    buffer.writeln("    // TODO: Fill in your flavor values here");
     buffer.writeln("    switch (f) {");
 
     final config = ConfigService.load();
@@ -74,6 +75,18 @@ class FileService {
     }
 
     var content = file.readAsStringSync();
+
+    // Ensure generated hint is present
+    const hint = "// GENERATED CODE - DO NOT MODIFY BY HAND";
+    if (!content.startsWith(hint)) {
+      content = "$hint\n\n$content";
+    }
+
+    // Remove TODO if present
+    content = content.replaceAll(
+        '// TODO: Fill in your flavor values here\n', '');
+    content = content.replaceAll(
+        '// TODO: Fill in your flavor values here', '');
 
     // 1. Update Enum
     final enumRegex = RegExp(r'enum Flavor\s*\{([^}]*)\}');
@@ -126,6 +139,18 @@ class FileService {
     if (!file.existsSync()) return;
 
     var content = file.readAsStringSync();
+
+    // Ensure generated hint is present
+    const hint = "// GENERATED CODE - DO NOT MODIFY BY HAND";
+    if (!content.startsWith(hint)) {
+      content = "$hint\n\n$content";
+    }
+
+    // Remove TODO if present
+    content = content.replaceAll(
+        '// TODO: Fill in your flavor values here\n', '');
+    content = content.replaceAll(
+        '// TODO: Fill in your flavor values here', '');
 
     // 1. Update Enum
     // Handles multi-line enums and various spacing
@@ -618,6 +643,18 @@ $command
     if (appConfigFile.existsSync()) {
       log.info('📝 Updating AppConfig enum and switch cases...');
       var content = appConfigFile.readAsStringSync();
+
+      // Ensure generated hint is present
+      const hint = "// GENERATED CODE - DO NOT MODIFY BY HAND";
+      if (!content.startsWith(hint)) {
+        content = "$hint\n\n$content";
+      }
+
+      // Remove TODO if present
+      content = content.replaceAll(
+          '// TODO: Fill in your flavor values here\n', '');
+      content = content.replaceAll(
+          '// TODO: Fill in your flavor values here', '');
 
       // Update Enum
       final enumRegex = RegExp(r'enum Flavor\s*\{([^}]*)\}');

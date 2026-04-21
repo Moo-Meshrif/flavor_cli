@@ -17,9 +17,6 @@ project 'Runner', {
   'Debug-PROD' => :debug,
   'Profile-PROD' => :release,
   'Release-PROD' => :release,
-  'Debug-C1' => :debug,
-  'Profile-C1' => :release,
-  'Release-C1' => :release,
 }
 
 def flutter_root

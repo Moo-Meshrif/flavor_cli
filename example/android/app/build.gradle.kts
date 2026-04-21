@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-                                            productFlavors {
+    productFlavors {
         create("dev") {
             dimension = "default"
             resValue("string", "app_name", "flavor-dev")

@@ -28,5 +28,11 @@
   "ios": {
     "bundle_id": "co.flavor.com"
   },
-  "production_flavor": "prod"
+  "production_flavor": "prod",
+  "firebase": {
+    "strategy": "unique_id_single_project",
+    "projects": {
+      "all": "flavor-test-7744d"
+    }
+  }
 }

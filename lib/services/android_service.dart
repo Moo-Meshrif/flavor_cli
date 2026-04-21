@@ -232,11 +232,18 @@ class AndroidService {
 
     String updatedContent;
     if (match != null) {
-      final index = match.start;
+      var startIndex = match.start;
+      // Find leading whitespace to clean up
+      while (startIndex > 0 &&
+          (content[startIndex - 1] == ' ' || content[startIndex - 1] == '\t')) {
+        startIndex--;
+      }
+
       // Find the end of the block by counting braces
       final endIndex = _findClosingBrace(content, match.end - 1);
       if (endIndex != -1) {
-        updatedContent = content.replaceRange(index, endIndex + 1, newBlock);
+        updatedContent =
+            content.replaceRange(startIndex, endIndex + 1, newBlock);
       } else {
         // Fallback: if braces are broken, just add it after android {
         updatedContent = content.replaceFirst(

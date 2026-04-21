@@ -26,23 +26,6 @@ flutter pub get
 
 ---
 
-## ⚙️ Initialize & Generate Flavors
-
-Run the CLI commands:
-
-```bash
-dart run flavor_cli init
-```
-
-### What this does
-
-- ✅ Configures Android `productFlavors`
-- ✅ Generates iOS schemes automatically
-- ✅ Applies consistent naming conventions
-- ✅ Prepares the project for multi-environment builds
-
----
-
 ## ▶️ Run Each Flavor
 
 Each environment has its own entry point. Use the `flavor_cli` run wrapper for a simplified experience:

@@ -1,3 +1,5 @@
+// GENERATED CODE - DO NOT MODIFY BY HAND
+
 enum Flavor { dev, stage, prod }
 
 class AppConfig {
@@ -6,16 +8,15 @@ class AppConfig {
 
   static void init(Flavor f) {
     flavor = f;
-    // TODO: Fill in your flavor values here
     switch (f) {
       case Flavor.dev:
-        url = 'FILL_ME';
+        url = '';
         break;
       case Flavor.stage:
-        url = 'FILL_ME';
+        url = '';
         break;
       case Flavor.prod:
-        url = 'FILL_ME';
+        url = '';
         break;
     }
   }
