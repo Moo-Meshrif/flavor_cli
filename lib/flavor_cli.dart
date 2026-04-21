@@ -1,13 +1,14 @@
 import 'dart:io';
 import 'dart:isolate';
-import 'src/commands/delete_command.dart';
-import 'src/commands/init_command.dart';
-import 'src/commands/run_command.dart';
-import 'src/commands/add_command.dart';
-import 'src/commands/build_command.dart';
-import 'src/commands/reset_command.dart';
-import 'src/commands/replace_command.dart';
-import 'src/commands/firebase_command.dart';
+import 'commands/delete_command.dart';
+import 'commands/init_command.dart';
+import 'commands/run_command.dart';
+import 'commands/add_command.dart';
+import 'commands/build_command.dart';
+import 'commands/reset_command.dart';
+import 'commands/replace_command.dart';
+import 'commands/firebase_command.dart';
+import 'commands/migrate_command.dart';
 
 class FlavorCLI {
   Future<void> run(List<String> arguments) async {
@@ -21,7 +22,7 @@ class FlavorCLI {
 
     switch (command) {
       case 'init':
-        await InitCommand().execute();
+        await InitCommand().execute(remaining);
         break;
       case 'add':
         await AddCommand().execute(remaining);
@@ -43,6 +44,9 @@ class FlavorCLI {
         break;
       case 'firebase':
         await FirebaseCommand().execute();
+        break;
+      case 'migrate':
+        await MigrateCommand().execute();
         break;
       case '--version':
       case '-v':
@@ -67,6 +71,7 @@ class FlavorCLI {
     print('  run      Run the project with a specific flavor');
     print('  build    Build the project with a specific flavor');
     print('  firebase Setup Firebase for all flavors automatically');
+    print('  migrate  Migrate .flavor_cli.json to the latest format');
     print('');
     print('Examples:');
     print('  dart run flavor_cli init');
@@ -75,6 +80,8 @@ class FlavorCLI {
     print('  dart run flavor_cli reset');
     print('  dart run flavor_cli run dev');
     print('  dart run flavor_cli build apk prod');
+    print('  dart run flavor_cli firebase');
+    print('  dart run flavor_cli migrate');
   }
 
   Future<void> _printVersion() async {
@@ -94,6 +101,6 @@ class FlavorCLI {
         }
       }
     } catch (_) {}
-    print('Flavor CLI v0.0.1 (fallback)');
+    print('Flavor CLI v0.0.3 (fallback)');
   }
 }

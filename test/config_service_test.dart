@@ -1,8 +1,7 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:test/test.dart';
-import 'package:path/path.dart' as p;
-import 'package:flavor_cli/src/services/config_service.dart';
+import 'package:flavor_cli/services/config_service.dart';
+import 'package:flavor_cli/models/flavor_config.dart';
 
 void main() {
   late Directory tempDir;
@@ -20,50 +19,106 @@ void main() {
       }
     });
 
-    test('init creates config file with default values', () {
-      ConfigService.init(
+    test('save and load config correctly', () {
+      final config = FlavorConfig(
         flavors: ['dev', 'prod'],
+        appName: 'TestApp',
         fields: {'baseUrl': 'String'},
+        flavorValues: {
+          'dev': {'baseUrl': 'dev.api.com'},
+          'prod': {'baseUrl': 'api.com'},
+        },
         appConfigPath: 'lib/config.dart',
         useSeparateMains: false,
+        useSuffix: true,
+        android: const AndroidConfig(applicationId: 'com.example.test'),
+        ios: const IosConfig(bundleId: 'com.example.test'),
+        productionFlavor: 'prod',
       );
 
-      final configPath = p.join(ConfigService.root, '.flavor_cli.json');
-      expect(File(configPath).existsSync(), isTrue);
-      final content = jsonDecode(File(configPath).readAsStringSync());
-      expect(content['flavors'], equals(['dev', 'prod']));
-      expect(content['app_config_path'], equals('lib/config.dart'));
-      expect(content['use_separate_mains'], isFalse);
+      ConfigService.save(config);
+
+      final loaded = ConfigService.load();
+      expect(loaded.flavors, equals(['dev', 'prod']));
+      expect(loaded.appName, equals('TestApp'));
+      expect(loaded.flavorValues['dev']?['baseUrl'], equals('dev.api.com'));
+      expect(loaded.appConfigPath, equals('lib/config.dart'));
     });
 
-    test('getFlavors returns flavors from config', () {
-      final flavors = ['x', 'y'];
-      ConfigService.init(flavors: flavors);
-      
-      expect(ConfigService.getFlavors(), equals(flavors));
-    });
+    test('addFlavor updates config and values', () {
+      final config = FlavorConfig(
+        flavors: ['dev'],
+        appName: 'TestApp',
+        fields: {'apiKey': 'String'},
+        flavorValues: {
+          'dev': {'apiKey': '123'}
+        },
+        appConfigPath: 'lib/config.dart',
+        useSeparateMains: false,
+        useSuffix: true,
+        android: const AndroidConfig(applicationId: 'com.example.test'),
+        ios: const IosConfig(bundleId: 'com.example.test'),
+        productionFlavor: 'dev',
+      );
+      ConfigService.save(config);
 
-    test('addFlavor updates the config', () {
-      ConfigService.init(flavors: ['dev']);
       final result = ConfigService.addFlavor('prod');
-      
       expect(result, isTrue);
-      expect(ConfigService.getFlavors(), containsAll(['dev', 'prod']));
+
+      final updated = ConfigService.load();
+      expect(updated.flavors, containsAll(['dev', 'prod']));
+      expect(updated.flavorValues.containsKey('prod'), isTrue);
+      expect(
+          updated.flavorValues['prod']?['apiKey'], equals('')); // Default empty
     });
 
-    test('addFlavor fails for duplicate', () {
-      ConfigService.init(flavors: ['dev']);
-      final result = ConfigService.addFlavor('dev');
-      
-      expect(result, isFalse);
-      expect(ConfigService.getFlavors(), equals(['dev']));
+    test('removeFlavor updates config', () {
+      final config = FlavorConfig(
+        flavors: ['dev', 'stage'],
+        appName: 'TestApp',
+        fields: {},
+        flavorValues: {'dev': {}, 'stage': {}},
+        appConfigPath: 'lib/config.dart',
+        useSeparateMains: false,
+        useSuffix: true,
+        android: const AndroidConfig(applicationId: 'a'),
+        ios: const IosConfig(bundleId: 'a'),
+        productionFlavor: 'dev',
+      );
+      ConfigService.save(config);
+
+      ConfigService.removeFlavor('stage');
+
+      final updated = ConfigService.load();
+      expect(updated.flavors, equals(['dev']));
+      expect(updated.flavorValues.containsKey('stage'), isFalse);
     });
 
-    test('removeFlavor updates the config', () {
-      ConfigService.init(flavors: ['dev', 'staging']);
-      ConfigService.removeFlavor('staging');
-      
-      expect(ConfigService.getFlavors(), equals(['dev']));
+    test('renameFlavor updates config and values', () {
+      final config = FlavorConfig(
+        flavors: ['dev', 'old'],
+        appName: 'TestApp',
+        fields: {'key': 'String'},
+        flavorValues: {
+          'dev': {'key': 'd'},
+          'old': {'key': 'o'},
+        },
+        appConfigPath: 'lib/config.dart',
+        useSeparateMains: false,
+        useSuffix: true,
+        android: const AndroidConfig(applicationId: 'a'),
+        ios: const IosConfig(bundleId: 'a'),
+        productionFlavor: 'old',
+      );
+      ConfigService.save(config);
+
+      ConfigService.renameFlavor('old', 'new');
+
+      final updated = ConfigService.load();
+      expect(updated.flavors, equals(['dev', 'new']));
+      expect(updated.flavorValues.containsKey('new'), isTrue);
+      expect(updated.flavorValues['new']?['key'], equals('o'));
+      expect(updated.productionFlavor, equals('new'));
     });
   });
 }

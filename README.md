@@ -2,7 +2,6 @@
 
 **Transform any Flutter project into a multi-environment powerhouse in seconds.**
 
-
 `flavor_cli` is a production-grade automation tool that handles the heavy lifting of build flavor configuration. Stop manually editing `build.gradle` or Xcode schemes; focus on shipping features instead.
 
 ---
@@ -11,14 +10,15 @@
 
 ### 🛡️ Resilient & Type-Safe
 
-*   **Zero-Guess Configuration**: Auto-generates a type-safe `AppConfig` class with typed variables (`String`, `bool`, `int`, `double`).
-*   **Project Safety**: Interactive `delete` and `replace` commands ensure your project remains buildable. Revert instantly with a **`reset`** command.
+- **Zero-Guess Configuration**: Auto-generates a type-safe `AppConfig` class with typed variables (`String`, `bool`, `int`, `double`), with per-flavor values defined at init time.
+- **Project Safety**: Interactive `delete` and `replace` commands ensure your project remains buildable. `replace` uses a pre-flight snapshot for atomic, rollback-capable renames. Revert instantly with a **`reset`** command.
+- **Strict Validation**: Every command validates `.flavor_cli.json` on load — missing fields, invalid Firebase strategies, and mismatched flavor values all fail fast with clear, actionable error messages.
 
 ### 📦 Flexible Architecture
-*   **Automatic Isolation**: Automatically configures unique internal suffixes (e.g., `.dev`, `.beta`) to allow parallel app installations on the same device.
-*   **Smart Patterns**: Seamlessly supports both the professional **"Separate Mains"** pattern and the classic **"Single Main"** approach.
-*   **IDE Integration**: Automatically generates and maintains VS Code `launch.json` configurations for each flavor, allowing you to run any environment directly from your IDE.
 
+- **Automatic Isolation**: Automatically configures unique internal suffixes (e.g., `.dev`, `.beta`) to allow parallel app installations on the same device.
+- **Smart Patterns**: Seamlessly supports both the professional **"Separate Mains"** pattern and the classic **"Single Main"** approach.
+- **IDE Integration**: Automatically generates and maintains VS Code `launch.json` configurations for each flavor, allowing you to run any environment directly from your IDE.
 
 ---
 
@@ -34,15 +34,27 @@ flutter pub add dev:flavor_cli
 
 ### 2. Initialization
 
+#### Option A — Interactive wizard
+
 Launch the interactive wizard to bootstrap your project:
 
 ```bash
 dart run flavor_cli init
 ```
 
+#### Option B — Non-interactive
+
+Commit a `.flavor_cli.json` to your repo and bootstrap with:
+
+```bash
+dart run flavor_cli init --from .flavor_cli.json
+```
+
+All required fields are validated before any files are touched. See [Config Reference](#-config-reference) for the full schema.
+
 ### 3. Usage Overview
 
-```text
+```
 Usage: flavor_cli <command> [arguments]
 
 Commands:
@@ -54,15 +66,18 @@ Commands:
   run      Run the project with a specific flavor
   build    Build the project with a specific flavor
   firebase Setup Firebase for all flavors automatically
+  migrate  Migrate .flavor_cli.json to the latest format
 
 Examples:
   dart run flavor_cli init
+  dart run flavor_cli init --from .flavor_cli.json
   dart run flavor_cli add staging
   dart run flavor_cli replace
   dart run flavor_cli reset
   dart run flavor_cli run dev
   dart run flavor_cli build apk prod
   dart run flavor_cli firebase
+  dart run flavor_cli migrate
 ```
 
 > [!TIP]
@@ -73,94 +88,276 @@ Examples:
 ## 🛠️ Command Deep Dive
 
 ### `1. init`
-**The wizard will guide you through:**
-1.  **Flavor Selection**: Choose standard sets (dev, prod) or enter manually.
-2.  **Schema Definition**: Define your `AppConfig` variables (e.g., `String baseUrl`).
-3.  **Config Location**: Specify where your generated configuration file should live.
-4.  **Main Strategy**: Choose between **Separate Mains** (one file per flavor) or **Single Main**.
-5.  **App Branding**: Set the display name for your application (auto-detected).
-6.  **Production Identity**: Identify which flavor is your "Golden" production build.
-7.  **Package ID**: Set your base application identifier (auto-detected from Gradle).
+
+**Option A — Interactive wizard**
+
+The wizard guides you through 9 steps:
+
+1. **Flavor Selection**: Choose standard sets (`dev, prod` or `dev, stage, prod`) or enter manually.
+2. **Schema Definition**: Define your `AppConfig` variables (e.g., `String baseUrl, bool debug`).
+3. **Config Location**: Specify where your generated `AppConfig` file should live.
+4. **Main Strategy**: Choose between **Separate Mains** (one file per flavor) or **Single Main**.
+5. **App Branding**: Set the display name for your application (auto-detected from `Info.plist` / `pubspec.yaml`).
+6. **Package ID**: Set your base application identifier (auto-detected from `build.gradle`).
+7. **Package ID Strategy**: Choose whether your flavors use **Unique IDs** or a **Shared ID**.
+8. **Firebase Project ID**: Set your Firebase project ID if you enable Firebase.
+9. **Per-Flavor Values**: Set the runtime value for each `AppConfig` variable across every flavor (e.g., `baseUrl` for `dev`, `stage`, `prod`).
+
+On completion, `.flavor_cli.json` is written to your project root (silently overwrites if it exists).
+
+**Option B — `--from <path>`**
+
+```bash
+dart run flavor_cli init --from .flavor_cli.json
+```
+
+Reads and strictly validates the config file, then runs the full setup non-interactively. Any missing required field fails immediately with a clear error:
+
+```
+❌ flavor_cli: invalid config at ".flavor_cli.json"
+   → "production_flavor" must be one of the declared flavors: [dev, stage, prod]
+```
 
 > [!NOTE]
-> **Zero-Config Isolation**: `flavor_cli` now automatically applies unique package identifiers for each flavor to ensure they can be installed side-by-side on devices.
+> **Package ID Strategy**: `flavor_cli` supports **Unique IDs** (appending `.flavorName` to non-production flavors, e.g. `com.example.app.dev`) or a **Shared ID** (same identifier across all environments). Unique IDs are recommended — they allow multiple flavors to be installed side-by-side on the same device. The production flavor always uses the base ID as-is, regardless of strategy.
 
 ---
 
 ### `2. add`
+
 Add a new environment to an existing setup without re-initializing.
-*   **The wizard will guide you through:** Prompting for the flavor name if not provided as an argument.
-*   **Outcome**: Generates new `.xcconfig`, updates Android flavors, and adds the flavor to your `AppConfig` enum.
+
+- Prompts for the flavor name if not provided as an argument.
+- Initializes empty per-flavor values for all defined `AppConfig` fields (fill them in `.flavor_cli.json` after).
+- Regenerates `.xcconfig` files, updates Android flavors, and adds the flavor to your `AppConfig`.
+
+```bash
+dart run flavor_cli add staging
+```
 
 ---
 
 ### `3. delete`
+
 Safely remove a flavor and its associated artifacts.
-*   **The wizard will guide you through:** Selecting the flavor to remove.
-*   **Safety First**: If deleting a flavor would leave only one remaining, the tool warns you of system damage and offers a full **Project Reset**.
-*   **Identity Migration**: If you delete your production flavor, you'll be prompted to nominate a new one.
+
+- Prompts for the flavor to remove if not provided.
+- **Safety First**: If deleting would leave fewer than 2 flavors, warns and offers a full **Project Reset** instead.
+- **Identity Migration**: If you delete your production flavor, you are prompted to nominate a replacement.
 
 ---
 
 ### `4. replace`
+
 Rename an existing flavor across the entire project.
-*   **The wizard will guide you through:** 
-    1. Selecting the old flavor.
-    2. Entering the new name.
-*   **Outcome**: Renames files, updates class definitions, and migrates Xcode schemes/schematics automatically.
+
+- Guides you through selecting the old flavor and entering the new name.
+- **Atomic rename**: A pre-flight snapshot of all affected files (xcconfig, schemes, gradle, dart mains, `.flavor_cli.json`) is taken before any changes. If any step fails, all files are restored verbatim from the snapshot — no partial renames.
 
 ---
 
 ### `5. reset`
-*   **Action**: Reverts your project to its original, non-flavored state.
-*   **Cleanup**: Removes all flavor mains, XCConfigs, generated scripts, and reverts `build.gradle` and Xcode project settings.
+
+Reverts your project to its original, non-flavored state.
+
+- Removes all flavor mains, xcconfig files, generated scripts, and VS Code launch configs.
+- Reverts `build.gradle` / `build.gradle.kts` and Xcode project settings.
+- Deletes `.flavor_cli.json`.
 
 ---
 
 ### `6. run`
-Standardized wrapper for the `flutter run` command.
-*   **The wizard will guide you through:** 
-    1. Selecting the flavor (if not provided).
-    2. Selecting the build mode (**debug**, **release**, or **profile**).
-*   **Outcome**: Launches the app on your selected device with the correct flavor and entry point.
+
+Standardized wrapper for `flutter run`.
+
+- Prompts for flavor and build mode (`debug` / `release` / `profile`) if not provided.
+- Resolves the correct entry point based on your main strategy (`lib/main/main_<flavor>.dart` or `lib/main.dart`).
+- Passes `--flavor`, `--target`, `--dart-define=FLAVOR=<flavor>`, and all per-flavor `AppConfig` field values as `--dart-define` entries automatically.
+- Fails with a clear error if the resolved entry point file does not exist.
+
+```bash
+dart run flavor_cli run dev
+```
 
 ---
 
 ### `7. build`
-High-level wrapper for the `flutter build` command.
-*   **The wizard will guide you through:** 
-    1. Selecting the build target (**apk**, **ipa**, **appbundle**, etc.) if not provided.
-    2. Selecting the flavor to build.
-*   **Outcome**: Generates a production-ready binary for the specified platform.
+
+High-level wrapper for `flutter build`.
+
+- Prompts for build target (`apk` / `ipa` / `appbundle` etc.) and flavor if not provided.
+- Same entry point resolution and `--dart-define` injection as `run`.
+
+```bash
+dart run flavor_cli build apk prod
+```
 
 ---
 
 ### `8. firebase`
+
 **The "One-Pass" Firebase orchestrator.**
-*   **The wizard will guide you through:** 
-    1. Selecting your Firebase project strategy.
-    2. Entering your Firebase Project IDs.
-*   **Outcome**: 
-    1. Automatically resets and authenticates via `firebase login`.
-    2. Runs `flutterfire configure` for every flavor with correct mappings.
-    3. **Automated Initialization**: Injects Firebase setup code and imports into your `main` files automatically.
+
+Reads the `firebase` block from `.flavor_cli.json` and configures Firebase non-interactively across all flavors. Requires `flutterfire` CLI to be available on PATH.
+
+Supports 3 strategies:
+
+| Strategy | `use_suffix` | When to use |
+|---|---|---|
+| `shared_id_single_project` | `false` | All flavors share one Firebase project and one package ID |
+| `unique_id_single_project` | `true` | All flavors in one Firebase project but with unique package IDs |
+| `unique_id_multi_project` | `true` | Each flavor has its own Firebase project |
+
+- Runs `flutterfire configure` the minimum number of times needed for your strategy.
+- Injects `Firebase.initializeApp` and the correct options import into your main files automatically.
+- **Idempotent**: Skips injection if `Firebase.initializeApp` is already present in a file.
+- **Suffix rules**: Production flavor always uses the base bundle ID. Non-production flavors append `.<flavorName>` when `use_suffix` is `true`.
+
+```bash
+dart run flavor_cli firebase
+```
+
+---
+
+### `9. migrate`
+
+**Migrate your configuration to the latest version.**
+
+If you are upgrading from an older version of `flavor_cli`, your `.flavor_cli.json` might be missing the required `values` section. The `migrate` command detects these omissions and guides you through filling them in.
+
+- Reads your existing `.flavor_cli.json` (even if it's currently invalid).
+- Prompts for missing per-flavor values for any defined `fields`.
+- Updates the configuration file while preserving your existing settings.
+- **Note**: This only updates the JSON file. Run `init` after migration to apply any changes to your source code.
+
+```bash
+dart run flavor_cli migrate
+```
+
+---
+
+## 📐 Config Reference
+
+`.flavor_cli.json` is the source of truth for all commands after `init`.
+
+```json
+{
+  "flavors": ["dev", "stage", "prod"],
+  "app_name": "MyApp",
+  "fields": {
+    "baseUrl": "String",
+    "debug": "bool"
+  },
+  "values": {
+    "dev":   { "baseUrl": "https://dev.api.com",  "debug": "true" },
+    "stage": { "baseUrl": "https://stage.api.com","debug": "true" },
+    "prod":  { "baseUrl": "https://api.com",      "debug": "false" }
+  },
+  "app_config_path": "lib/core/config/app_config.dart",
+  "use_separate_mains": true,
+  "use_suffix": true,
+  "android": {
+    "application_id": "com.example.app"
+  },
+  "ios": {
+    "bundle_id": "com.example.app"
+  },
+  "production_flavor": "prod",
+  "firebase": {
+    "strategy": "unique_id_multi_project",
+    "projects": {
+      "dev":   "my-app-dev",
+      "stage": "my-app-stage",
+      "prod":  "my-app-prod"
+    }
+  }
+}
+```
+
+### Required fields
+
+`flavors`, `app_name`, `production_flavor`, `android.application_id`, `ios.bundle_id`, `app_config_path`, `use_separate_mains`, `use_suffix`
+
+### Optional fields
+
+| Field | Default | Notes |
+|---|---|---|
+| `fields` | `{}` | AppConfig variable definitions |
+| `values` | `{}` | Per-flavor values for each field in `fields` |
+| `firebase` | _(absent)_ | Skips firebase setup if not present |
 
 ---
 
 ## 💡 Pro Tips
 
 ### Separate Mains Pattern
-By default, `flavor_cli` creates separate main files (e.g., `lib/main/main_dev.dart`). This is the **safest** way to handle flavors as it ensures environment-specific code is only compiled for that specific flavor.
+
+`flavor_cli` creates separate main files by default (e.g., `lib/main/main_dev.dart`). This is the safest approach — environment-specific code is only compiled for its intended flavor, and `--dart-define` values are injected automatically at build time.
+
+### Committing `.flavor_cli.json`
+
+Commit `.flavor_cli.json` to version control. Any teammate or CI runner can then bootstrap the full flavor setup with a single command:
+
+```bash
+dart run flavor_cli init --from .flavor_cli.json
+```
+
+### Per-Flavor Values & `--dart-define`
+
+Every field defined in `fields` and its corresponding value in `values` is automatically passed as `--dart-define=<KEY>=<VALUE>` to every `run` and `build` invocation. Your `AppConfig` class reads these at runtime — no hardcoded environment strings anywhere in your codebase.
 
 ---
 
 ## 📚 Guides
 
-*   **[Firebase Integration](doc/FIREBASE.md)** - A step-by-step guide to using Firebase CLI with flavors.
-*   **[Manual Setup Guide](doc/MANUAL_SETUP.md)** - A beginner-friendly reference for manual flavor configuration on Android and iOS.
+- **[Firebase Integration](doc/FIREBASE.md)** — Step-by-step guide to using the Firebase CLI with flavors.
+- **[Manual Setup Guide](doc/MANUAL_SETUP.md)** — Beginner-friendly reference for manual flavor configuration on Android and iOS.
+
+---
+
+---
+
+## 🔄 Migration Guide
+
+If you are migrating from an older version of `flavor_cli`, note that the `.flavor_cli.json` configuration format has been updated to support fully non-interactive setups and robust validation.
+
+### 1. The `values` Field (Required)
+
+Previously, per-flavor values (like API URLs) were only entered during the wizard and weren't stored in the config. They are now **required** in the JSON if you define any `fields`.
+
+**Old Format (Unsupported):**
+```json
+{
+  "flavors": ["dev", "stage", "prod"],
+  "fields": { "url": "String" }
+}
+```
+
+**New Format (Required):**
+```json
+{
+  "flavors": ["dev", "stage", "prod"],
+  "fields": { "url": "String" },
+  "values": {
+    "dev":   { "url": "https://dev.api.com" },
+    "stage": { "url": "https://stage.api.com" },
+    "prod":  { "url": "https://api.com" }
+  }
+}
+```
+
+### 2. Upgrading your project
+
+The easiest way to migrate is to simply run the new `migrate` command:
+
+```bash
+dart run flavor_cli migrate
+```
+
+This command will read your old configuration, prompt you for the missing values, and update your `.flavor_cli.json` automatically while preserving your existing flavors and strategies.
+
+---
 
 ## 🤝 Contributing
 
 Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-

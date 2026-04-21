@@ -30,9 +30,12 @@ class AppLogger {
     return selection == 'Yes';
   }
 
-  String chooseOne(String message, {required List<String> choices}) =>
-      _logger.chooseOne(message, choices: choices);
+  String chooseOne(String message,
+          {required List<String> choices, String? defaultValue}) =>
+      _logger.chooseOne(message, choices: choices, defaultValue: defaultValue);
 
-  List<String> chooseAny(String message, {required List<String> choices, List<String>? defaultValues}) =>
-      _logger.chooseAny(message, choices: choices, defaultValues: defaultValues);
+  List<String> chooseAny(String message,
+          {required List<String> choices, List<String>? defaultValues}) =>
+      _logger.chooseAny(message,
+          choices: choices, defaultValues: defaultValues);
 }

@@ -1,4 +1,4 @@
-import '../services/reset_service.dart';
+import '../runner/setup_runner.dart';
 import '../utils/logger.dart';
 import '../services/config_service.dart';
 
@@ -21,7 +21,7 @@ class ResetCommand {
     }
 
     try {
-      ResetService.reset(logger: _log);
+      SetupRunner(logger: _log).reset();
     } catch (e) {
       _log.error('❌ Failed to reset project: $e');
     }

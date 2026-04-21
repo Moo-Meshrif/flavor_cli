@@ -2,11 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import '../utils/logger.dart';
+import '../utils/type_utils.dart';
 import 'config_service.dart';
 
 class FileService {
   static void createStructure() {
-    if (ConfigService.useSeparateMains()) {
+    if (ConfigService.load().useSeparateMains) {
       Directory(p.join(ConfigService.root, 'lib/main'))
           .createSync(recursive: true);
     }
@@ -15,7 +16,7 @@ class FileService {
   }
 
   static void createAppConfig({bool overwrite = true}) {
-    final path = p.join(ConfigService.root, ConfigService.getAppConfigPath());
+    final path = p.join(ConfigService.root, ConfigService.load().appConfigPath);
     final file = File(path);
 
     if (!overwrite && file.existsSync()) return;
@@ -26,8 +27,8 @@ class FileService {
       dir.createSync(recursive: true);
     }
 
-    final flavors = ConfigService.getFlavors();
-    final fields = ConfigService.getFields();
+    final flavors = ConfigService.load().flavors;
+    final fields = ConfigService.load().fields;
 
     final buffer = StringBuffer();
     buffer.writeln("enum Flavor { ${flavors.join(', ')} }");
@@ -45,10 +46,13 @@ class FileService {
     buffer.writeln("    // TODO: Fill in your flavor values here");
     buffer.writeln("    switch (f) {");
 
+    final config = ConfigService.load();
     for (final f in flavors) {
       buffer.writeln("      case Flavor.$f:");
+      final values = config.flavorValues[f] ?? {};
       for (final entry in fields.entries) {
-        final val = _getDefaultValueForType(entry.value);
+        final rawVal = values[entry.key] ?? '';
+        final val = TypeUtils.formatValueForDart(entry.value, rawVal);
         buffer.writeln("        ${entry.key} = $val;");
       }
       buffer.writeln("        break;");
@@ -62,7 +66,7 @@ class FileService {
   }
 
   static void addFlavorToAppConfig(String flavor) {
-    var path = p.join(ConfigService.root, ConfigService.getAppConfigPath());
+    var path = p.join(ConfigService.root, ConfigService.load().appConfigPath);
     var file = File(path);
     if (!file.existsSync()) {
       createAppConfig();
@@ -92,12 +96,15 @@ class FileService {
       if (closingBraceIndex != -1) {
         final switchBody = content.substring(startIndex, closingBraceIndex);
         if (!switchBody.contains('case Flavor.$flavor:')) {
-          final fields = ConfigService.getFields();
+          final config = ConfigService.load();
+          final fields = config.fields;
+          final values = config.flavorValues[flavor] ?? {};
           final buffer = StringBuffer();
           buffer.writeln();
           buffer.writeln("      case Flavor.$flavor:");
           for (final entry in fields.entries) {
-            final val = _getDefaultValueForType(entry.value);
+            final rawVal = values[entry.key] ?? '';
+            final val = TypeUtils.formatValueForDart(entry.value, rawVal);
             buffer.writeln("        ${entry.key} = $val;");
           }
           buffer.writeln("        break;");
@@ -114,7 +121,7 @@ class FileService {
   }
 
   static void removeFlavorFromAppConfig(String flavor) {
-    var path = p.join(ConfigService.root, ConfigService.getAppConfigPath());
+    var path = p.join(ConfigService.root, ConfigService.load().appConfigPath);
     var file = File(path);
     if (!file.existsSync()) return;
 
@@ -180,25 +187,11 @@ class FileService {
     file.writeAsStringSync(content);
   }
 
-  static String _getDefaultValueForType(String type) {
-    switch (type.trim()) {
-      case 'bool':
-        return 'false';
-      case 'int':
-        return '0';
-      case 'double':
-        return '0.0';
-      case 'String':
-        return "'FILL_ME'";
-      default:
-        if (type.contains('?')) return 'null';
-        return "'FILL_ME'; // TODO: Set value for $type";
-    }
-  }
+  // _getDefaultValueForType removed in favor of TypeUtils
 
   static void createMainFiles({bool overwrite = true}) {
-    final useSeparate = ConfigService.useSeparateMains();
-    final flavors = ConfigService.getFlavors();
+    final useSeparate = ConfigService.load().useSeparateMains;
+    final flavors = ConfigService.load().flavors;
 
     if (useSeparate) {
       for (final flavor in flavors) {
@@ -297,10 +290,9 @@ class FileService {
 
           // Calculate package ID for this flavor
           final config = ConfigService.load();
-          final baseId =
-              config['android']?['application_id'] ?? 'com.example.app';
-          final prodFlavor = ConfigService.getProductionFlavor();
-          final useSuffix = ConfigService.useSuffix();
+          final baseId = config.android.applicationId;
+          final prodFlavor = ConfigService.load().productionFlavor;
+          final useSuffix = ConfigService.load().useSuffix;
 
           String packageId = baseId;
           if (useSuffix && flavor != prodFlavor) {
@@ -399,7 +391,7 @@ class FileService {
     if (!file.existsSync()) return;
 
     var content = file.readAsStringSync();
-    final configPath = ConfigService.getAppConfigPath();
+    final configPath = ConfigService.load().appConfigPath;
 
     // Calculate relative path from the main file to any config path,
     // respecting the working directory.
@@ -434,7 +426,7 @@ class FileService {
 
     // 3. Add Switch Case helper if needed (for single main)
     if (flavor == null) {
-      final flavors = ConfigService.getFlavors();
+      final flavors = ConfigService.load().flavors;
       final cases =
           flavors.map((f) => "    case '$f': return Flavor.$f;").join('\n');
 
@@ -482,8 +474,8 @@ $cases
     if (match == null) return;
 
     final pkgName = match.group(1)!.trim();
-    final prodFlavor = ConfigService.getProductionFlavor();
-    final useSeparate = ConfigService.useSeparateMains();
+    final prodFlavor = ConfigService.load().productionFlavor;
+    final useSeparate = ConfigService.load().useSeparateMains;
 
     final targetImport = useSeparate
         ? "import 'package:$pkgName/main/main_$prodFlavor.dart';"
@@ -503,7 +495,7 @@ $cases
   }
 
   static String _mainBoilerplate(String flavor) {
-    final configPath = ConfigService.getAppConfigPath();
+    final configPath = ConfigService.load().appConfigPath;
     final relativePath = p.relative(configPath, from: 'lib/main');
 
     return """
@@ -531,7 +523,7 @@ class MyApp extends StatelessWidget {
   }
 
   static String _singleMainBoilerplate(List<String> flavors) {
-    final configPath = ConfigService.getAppConfigPath();
+    final configPath = ConfigService.load().appConfigPath;
     final relativePath = p.relative(configPath, from: 'lib');
     final cases =
         flavors.map((f) => "    case '$f': return Flavor.$f;").join('\n');
@@ -573,7 +565,7 @@ class MyApp extends StatelessWidget {
     Directory(p.join(ConfigService.root, 'scripts'))
         .createSync(recursive: true);
     final file = File(p.join(ConfigService.root, 'scripts/run.sh'));
-    final useSeparate = ConfigService.useSeparateMains();
+    final useSeparate = ConfigService.load().useSeparateMains;
 
     String command;
     if (useSeparate) {
@@ -620,7 +612,7 @@ $command
     }
 
     // 2. Update AppConfig
-    final appConfigPath = p.join(root, ConfigService.getAppConfigPath());
+    final appConfigPath = p.join(root, ConfigService.load().appConfigPath);
     final appConfigFile = File(appConfigPath);
 
     if (appConfigFile.existsSync()) {
@@ -675,119 +667,131 @@ $command
     }
   }
 
-  static void injectFirebase(
-      {required bool separate, String? flavor, List<String>? activeFlavors}) {
+  static void injectFirebase({required bool separate, String? flavor}) {
     final root = ConfigService.root;
-    final flavors = activeFlavors ?? ConfigService.getFlavors();
+    final config = ConfigService.load();
+    final strategy = config.firebase?.strategy;
+    final flavors = config.flavors;
 
     if (separate) {
       if (flavor == null) {
         for (final f in flavors) {
-          injectFirebase(separate: true, flavor: f, activeFlavors: [f]);
+          injectFirebase(separate: true, flavor: f);
         }
         return;
       }
+      
       final mainPath = p.join(root, 'lib/main/main_$flavor.dart');
       final file = File(mainPath);
       if (!file.existsSync()) return;
 
-      // Ensure config file exists before injecting
-      final configFile = File(p.join(root, 'lib/firebase_options_$flavor.dart'));
+      final optionsFile = strategy == 'shared_id_single_project' 
+          ? 'firebase_options.dart' 
+          : 'firebase_options_$flavor.dart';
+      
+      final configFile = File(p.join(root, 'lib/$optionsFile'));
       if (!configFile.existsSync()) return;
 
       var content = file.readAsStringSync();
-
+      
       // 1. Manage Imports
       if (!content.contains('firebase_core.dart')) {
         content = "import 'package:firebase_core/firebase_core.dart';\n"
-            "import '../firebase_options_$flavor.dart';\n$content";
+                  "import '../$optionsFile';\n$content";
+      } else if (!content.contains(optionsFile)) {
+        content = "import '../$optionsFile';\n$content";
       }
 
       // 2. Inject Initialization
-      if (!content.contains('Firebase.initializeApp')) {
-        // Find AppConfig.init call and its indentation
-        final initRegex = RegExp(r'^(\s*)AppConfig\.init\s*\(.*\);', multiLine: true);
-        final match = initRegex.firstMatch(content);
-        
-        if (match != null) {
-          final indent = match.group(1) ?? '  ';
-          final initBlock = "${indent}WidgetsFlutterBinding.ensureInitialized();\n"
-              "${indent}await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform,);\n";
-
-          final mainRegex = RegExp(r'void main\s*\(\s*\)\s*(async\s*)?{');
-          if (mainRegex.hasMatch(content)) {
-            content = content.replaceFirst(mainRegex, 'void main() async {');
-            content = content.replaceFirst(match.group(0)!, '${match.group(0)!}\n$initBlock');
-          }
-        }
+      if (content.contains('Firebase.initializeApp')) {
+        return; // Skip if already initialized
       }
-      file.writeAsStringSync(content);
+
+      final initRegex = RegExp(r'^(\s*)AppConfig\.init\s*\(.*\);', multiLine: true);
+      final match = initRegex.firstMatch(content);
+      
+      if (match != null) {
+        final indent = match.group(1) ?? '  ';
+        final initBlock = "\n${indent}WidgetsFlutterBinding.ensureInitialized();\n"
+            "${indent}await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);\n";
+
+        final mainRegex = RegExp(r'void main\s*\(\s*\)\s*(async\s*)?{');
+        content = content.replaceFirst(mainRegex, 'void main() async {');
+        content = content.replaceFirst(match.group(0)!, '${match.group(0)!}$initBlock');
+        file.writeAsStringSync(content);
+      }
     } else {
+      // Single Main Strategy
       final mainPath = p.join(root, 'lib/main.dart');
       final file = File(mainPath);
       if (!file.existsSync()) return;
 
-      // Filter flavors to only those that have config files
-      final searchFlavors = ConfigService.getFlavors();
-      final configuredFlavors = searchFlavors.where((f) {
-        return File(p.join(root, 'lib/firebase_options_$f.dart')).existsSync();
-      }).toList();
-
-      if (configuredFlavors.isEmpty) return;
-
       var content = file.readAsStringSync();
 
-      // 1. Manage Imports
-      // Remove existing Firebase related imports to avoid duplicates/leftovers
-      final firebaseCoreImportRegex = RegExp(r'''import ['"]package:firebase_core/firebase_core\.dart['"];\n?''');
-      final firebaseOptionsImportRegex = RegExp(r'''import ['"]firebase_options_.*\.dart['"] as \w+;\n?''');
-      
-      content = content.replaceAll(firebaseCoreImportRegex, '');
-      content = content.replaceAll(firebaseOptionsImportRegex, '');
+      if (strategy == 'shared_id_single_project') {
+         final configFile = File(p.join(root, 'lib/firebase_options.dart'));
+         if (!configFile.existsSync()) return;
 
-      final importBuffer = StringBuffer();
-      importBuffer.writeln("import 'package:firebase_core/firebase_core.dart';");
-      for (final f in configuredFlavors) {
-        importBuffer.writeln("import 'firebase_options_$f.dart' as $f;");
-      }
-      content = importBuffer.toString() + content.trimLeft();
-
-      // 2. Manage Initialization
-      final initRegex = RegExp(r'await Firebase\.initializeApp\s*\([\s\S]*?\);');
-      
-      // Generate the new block with correct indentation
-      String indent = '  ';
-      final configInitRegex = RegExp(r'^(\s*)AppConfig\.init\s*\(.*\);', multiLine: true);
-      final configMatch = configInitRegex.firstMatch(content);
-      if (configMatch != null) {
-        indent = configMatch.group(1) ?? '  ';
-      }
-
-      final buffer = StringBuffer();
-      buffer.writeln("await Firebase.initializeApp(");
-      buffer.writeln("$indent  options: switch (flavor) {");
-      for (final f in configuredFlavors) {
-        buffer.writeln("$indent    Flavor.$f => $f.DefaultFirebaseOptions.currentPlatform,");
-      }
-      
-      // Add default case if not all flavors are configured
-      if (configuredFlavors.length < ConfigService.getFlavors().length) {
-        final firstConfigured = configuredFlavors.first;
-        buffer.writeln("$indent    _ => $firstConfigured.DefaultFirebaseOptions.currentPlatform,");
-      }
-
-      buffer.writeln("$indent  },");
-      buffer.write("$indent)");
-
-      if (content.contains('Firebase.initializeApp')) {
-        // Replace existing block - find the whole await Firebase.initializeApp(...);
-        content = content.replaceFirst(initRegex, buffer.toString().trim() + ';');
+         if (!content.contains('firebase_core.dart')) {
+           content = "import 'package:firebase_core/firebase_core.dart';\n"
+                     "import 'firebase_options.dart';\n$content";
+         }
+         
+         if (!content.contains('Firebase.initializeApp')) {
+           final initRegex = RegExp(r'^(\s*)AppConfig\.init\s*\(.*\);', multiLine: true);
+           final match = initRegex.firstMatch(content);
+           if (match != null) {
+             final indent = match.group(1) ?? '  ';
+             final initBlock = "\n${indent}WidgetsFlutterBinding.ensureInitialized();\n"
+                 "${indent}await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);\n";
+             
+             final mainRegex = RegExp(r'void main\s*\(\s*\)\s*(async\s*)?{');
+             content = content.replaceFirst(mainRegex, 'void main() async {');
+             content = content.replaceFirst(match.group(0)!, '${match.group(0)!}$initBlock');
+           }
+         }
       } else {
-        // Inject new block
-        if (configMatch != null) {
+        // Multi-Options Injection (Unique ID strategies)
+        final configuredFlavors = flavors.where((f) {
+          return File(p.join(root, 'lib/firebase_options_$f.dart')).existsSync();
+        }).toList();
+
+        if (configuredFlavors.isEmpty) return;
+
+        // Clean existing to regenerate
+        content = content.replaceAll(RegExp(r'''import ['"]package:firebase_core/firebase_core\.dart['"];\n?'''), '');
+        content = content.replaceAll(RegExp(r'''import ['"]firebase_options_.*\.dart['"] as \w+;\n?'''), '');
+        
+        final importBuffer = StringBuffer();
+        importBuffer.writeln("import 'package:firebase_core/firebase_core.dart';");
+        for (final f in configuredFlavors) {
+          importBuffer.writeln("import 'firebase_options_$f.dart' as $f;");
+        }
+        content = importBuffer.toString() + content.trimLeft();
+
+        final initRegex = RegExp(r'await Firebase\.initializeApp\s*\([\s\S]*?\);');
+        String indent = '  ';
+        final configInitRegex = RegExp(r'^(\s*)AppConfig\.init\s*\(.*\);', multiLine: true);
+        final configMatch = configInitRegex.firstMatch(content);
+        if (configMatch != null) indent = configMatch.group(1) ?? '  ';
+
+        final buffer = StringBuffer();
+        buffer.writeln("await Firebase.initializeApp(");
+        buffer.writeln("$indent  options: switch (flavor) {");
+        for (final f in configuredFlavors) {
+          buffer.writeln("$indent    Flavor.$f => $f.DefaultFirebaseOptions.currentPlatform,");
+        }
+        if (configuredFlavors.length < flavors.length) {
+          buffer.writeln("$indent    _ => ${configuredFlavors.first}.DefaultFirebaseOptions.currentPlatform,");
+        }
+        buffer.writeln("$indent  },");
+        buffer.write("$indent)");
+
+        if (content.contains('Firebase.initializeApp')) {
+          content = content.replaceFirst(initRegex, buffer.toString().trim() + ';');
+        } else if (configMatch != null) {
           final initBlock = "\n${indent}WidgetsFlutterBinding.ensureInitialized();\n"
-              "${indent}${buffer.toString().trim().replaceAll('\n', '\n$indent')};";
-          
+              "${indent}${buffer.toString().trim()};";
           final mainRegex = RegExp(r'void main\s*\(\s*\)\s*(async\s*)?{');
           content = content.replaceFirst(mainRegex, 'void main() async {');
           content = content.replaceFirst(configMatch.group(0)!, '${configMatch.group(0)!}$initBlock');
@@ -799,8 +803,8 @@ $command
 
   static void updateVSCodeLaunchConfig() {
     final root = ConfigService.root;
-    final flavors = ConfigService.getFlavors();
-    final separate = ConfigService.useSeparateMains();
+    final flavors = ConfigService.load().flavors;
+    final separate = ConfigService.load().useSeparateMains;
     final vscodeDir = Directory(p.join(root, '.vscode'));
     if (!vscodeDir.existsSync()) vscodeDir.createSync();
 

@@ -8,6 +8,17 @@
   "fields": {
     "url": "String"
   },
+  "values": {
+    "dev": {
+      "url": ""
+    },
+    "stage": {
+      "url": ""
+    },
+    "prod": {
+      "url": ""
+    }
+  },
   "app_config_path": "lib/app_config.dart",
   "use_separate_mains": true,
   "use_suffix": true,

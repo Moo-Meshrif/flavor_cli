@@ -3,9 +3,10 @@ import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'config_service.dart';
 import '../utils/logger.dart';
+import '../models/flavor_config.dart';
 
 class IOSService {
-  static void setupSchemes({AppLogger? logger}) {
+  static void setupSchemes({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
     final root = ConfigService.root;
 
@@ -14,20 +15,20 @@ class IOSService {
       throw Exception('iOS folder not found');
     }
 
-    _createXCConfigFiles(log);
-    _updateInfoPlist(log);
-    _runAutomationScript(log);
+    _createXCConfigFiles(config, log);
+    _updateInfoPlist(config, log);
+    _runAutomationScript(config, log);
 
     // Sync Pods after adding flavored configurations
     syncPods(logger: log);
 
-    _brandSchemes(log);
+    _brandSchemes(config, log);
 
     log.success('🚀 iOS flavor setup completed automatically');
   }
 
-  static void _createXCConfigFiles(AppLogger log) {
-    final flavors = ConfigService.getFlavors();
+  static void _createXCConfigFiles(FlavorConfig config, AppLogger log) {
+    final flavors = config.flavors;
     final root = ConfigService.root;
     final flutterDir = Directory(p.join(root, 'ios/Flutter'));
 
@@ -37,14 +38,13 @@ class IOSService {
 
     for (final flavor in flavors) {
       final file = File(p.join(flutterDir.path, '$flavor.xcconfig'));
-      final brandedName = _getBrandedName(ConfigService.getAppName(), flavor);
+      final brandedName = _getBrandedName(config.appName, flavor, config);
 
-      final productionFlavor = ConfigService.getProductionFlavor();
-      final suffix = (flavor == productionFlavor || !ConfigService.useSuffix())
-          ? ''
-          : '.$flavor';
+      final productionFlavor = config.productionFlavor;
+      final suffix =
+          (flavor == productionFlavor || !config.useSuffix) ? '' : '.$flavor';
 
-      final useSeparateMains = ConfigService.useSeparateMains();
+      final useSeparateMains = config.useSeparateMains;
       final targetPath =
           useSeparateMains ? 'lib/main/main_$flavor.dart' : 'lib/main.dart';
 
@@ -60,7 +60,7 @@ APP_NAME=$brandedName
     }
   }
 
-  static void _updateInfoPlist(AppLogger log) {
+  static void _updateInfoPlist(FlavorConfig config, AppLogger log) {
     final plistPath = p.join(ConfigService.root, 'ios/Runner/Info.plist');
     final file = File(plistPath);
     if (!file.existsSync()) return;
@@ -106,7 +106,7 @@ APP_NAME=$brandedName
     log.info('   ✓ Info.plist updated to use \$(APP_NAME)');
   }
 
-  static void _runAutomationScript(AppLogger log) {
+  static void _runAutomationScript(FlavorConfig config, AppLogger log) {
     final root = ConfigService.root;
     final projectFile = Directory(p.join(root, 'ios/Runner.xcodeproj'));
 
@@ -125,7 +125,19 @@ APP_NAME=$brandedName
     scriptFile.writeAsStringSync(_iosAutomationScriptContent());
 
     try {
-      _runRubyAutomation(log: log, scriptPath: scriptFile.path);
+      final env = {
+        'FLAVOR_LIST': config.flavors.join(','),
+        'PRODUCTION_FLAVOR': config.productionFlavor,
+        'BUNDLE_ID': config.ios.bundleId,
+        'USE_SUFFIX': config.useSuffix.toString(),
+        'APP_NAME': config.appName,
+      };
+
+      _runRubyAutomation(
+        log: log,
+        scriptPath: scriptFile.path,
+        environment: env,
+      );
     } finally {
       // Cleanup temp directory
       if (tempDir.existsSync()) {
@@ -156,40 +168,16 @@ def get_scheme_name(flavor)
   (get_flavor_alias(flavor) || flavor).upcase
 end
 
-# Helper to get flavor alias (from .flavor_cli.json if available)
+# Helper to get flavor alias
 def get_flavor_alias(flavor)
-  config_path = '.flavor_cli.json'
-  if File.exist?(config_path)
-    config = JSON.parse(File.read(config_path))
-    raw_flavors = config['flavors'] || []
-    flavor_config = raw_flavors.find { |f| f.is_a?(Hash) && f['name'] == flavor }
-    if flavor_config && flavor_config['alias'] && !flavor_config['alias'].to_s.empty?
-      return flavor_config['alias'].to_s
-    end
-  end
   # Special common case
   return 'stage' if flavor == 'staging'
   flavor.to_s
 end
 
 # Helper to get flavored bundle identifier
-def get_flavored_bundle_id(base_id, flavor, config)
-  use_suffix = config['use_suffix'] != false # Default to true
-  
-  production_flavor = config['production_flavor']
-  if production_flavor.nil?
-    flavors = config['flavors'] || []
-    raw_flavors = flavors.map { |f| f.is_a?(Hash) ? f['name'] : f }.compact
-    if raw_flavors.include?('prod')
-      production_flavor = 'prod'
-    elsif raw_flavors.include?('production')
-      production_flavor = 'production'
-    else
-      production_flavor = raw_flavors.first
-    end
-  end
-
-  if !use_suffix || flavor == production_flavor
+def get_flavored_bundle_id(base_id, flavor, production_flavor, use_suffix)
+  if use_suffix != 'true' || flavor == production_flavor
     return base_id
   else
     # Sanitize flavor for bundle id (lowercase, dots/hyphens only)
@@ -198,9 +186,11 @@ def get_flavored_bundle_id(base_id, flavor, config)
   end
 end
 
-# Find flavors from command line or .flavor_cli.json
-config_path = '.flavor_cli.json'
-config = File.exist?(config_path) ? JSON.parse(File.read(config_path)) : {}
+env_flavors = ENV['FLAVOR_LIST'].to_s
+env_production_flavor = ENV['PRODUCTION_FLAVOR'].to_s
+env_bundle_id = ENV['BUNDLE_ID'].to_s
+env_use_suffix = ENV['USE_SUFFIX'].to_s
+env_app_name = ENV['APP_NAME'] || 'MyApp'
 
 if ARGV.include?('--delete')
   delete_flavor = ARGV[ARGV.index('--delete') + 1]
@@ -209,12 +199,11 @@ elsif ARGV.include?('--reset')
   reset_mode = true
   flavors = []
 else
-  if config.empty?
-    puts "❌ .flavor_cli.json not found. Run 'init' first."
+  if env_flavors.empty?
+    puts "❌ FLAVOR_LIST env check failed."
     exit 1
   end
-  raw_flavors = config['flavors'] || []
-  flavors = raw_flavors.map { |f| f.is_a?(Hash) ? f['name'] : f }.compact
+  flavors = env_flavors.split(',')
 end
 
 project_path = 'ios/Runner.xcodeproj'
@@ -345,8 +334,7 @@ if reset_mode
   end
 
   # Get base information for restoration
-  ios_config = config['ios'] || {}
-  restored_bundle_id = ios_config['bundle_id']
+  restored_bundle_id = env_bundle_id
 
   # 2. Reset base configs and clear flavored settings
   ['Debug', 'Release', 'Profile'].each do |base_name|
@@ -478,15 +466,10 @@ flavors.each do |flavor|
                         flutter_group.files.find { |f| File.basename(f.path) == base_xcconfig_name }
 
     flavor_alias = (get_flavor_alias(flavor) || flavor).upcase
-    base_app_name = config['app_name'] || 'MyApp'
+    base_app_name = env_app_name
     
-    # Target Path Logic
-    use_separate_mains = config['use_separate_mains'] != false
-    flutter_target = use_separate_mains ? "lib/main/main_#{flavor}.dart" : "lib/main.dart"
-    
-    ios_config = config['ios'] || {}
-    base_bundle_id = ios_config['bundle_id'] || 'com.example.app'
-    flavored_bundle_id = get_flavored_bundle_id(base_bundle_id, flavor, config)
+    base_bundle_id = env_bundle_id || 'com.example.app'
+    flavored_bundle_id = get_flavored_bundle_id(base_bundle_id, flavor, env_production_flavor, env_use_suffix)
     
     # Project level injection
     config_obj = project.build_configurations.find { |c| c.name == target_config_name }
@@ -521,10 +504,6 @@ flavors.each do |flavor|
       target_config = target.build_configurations.find { |c| c.name == target_config_name }
       if target_config
         if target.name == 'Runner'
-          # CRITICAL: We clear the target-level base configuration reference.
-          # This allows CocoaPods to link its Pods-Runner.xxx.xcconfig here.
-          # Since the Project-level is linked to dev.xcconfig, variables like
-          # APP_NAME will still be inherited correctly.
           target_config.base_configuration_reference = nil
 
           # Cleanup legacy direct injections
@@ -616,17 +595,12 @@ Dir.glob(Xcodeproj::XCScheme.shared_data_dir(project_path).join("*.xcscheme")).e
   end
 end
 
-# 5. Path Healing: DEPRECATED (Moved to heal_flutter_group helper and called in reset/init)
-
-
 # 5. Scheme Creation
 flavors.each do |flavor|
   scheme_name = get_scheme_name(flavor)
   
   puts "✔ Creating Scheme: #{scheme_name}"
   
-  # Clone from Runner.xcscheme (or its backup) to inherit correct platform/executable settings
-  # We always regenerate flavor schemes to ensure the naming/branding is updated
   runner_scheme_path = Xcodeproj::XCScheme.shared_data_dir(project_path).join("Runner.xcscheme")
   backup_scheme_path = Xcodeproj::XCScheme.shared_data_dir(project_path).join("Runner.xcscheme.backup")
   
@@ -645,7 +619,6 @@ flavors.each do |flavor|
     end
   end
   
-  # Set configurations for all actions
   name = (get_flavor_alias(flavor) || flavor).upcase
   scheme.launch_action.build_configuration = "Debug-#{name}"
   scheme.test_action.build_configuration = "Debug-#{name}"
@@ -653,10 +626,8 @@ flavors.each do |flavor|
   scheme.analyze_action.build_configuration = "Debug-#{name}"
   scheme.archive_action.build_configuration = "Release-#{name}"
   
-  # Deep Branding: Ensure every BuildableReference points to our branded binary
   branded_binary = "$(APP_NAME).app"
   
-  # Update all buildable references in the scheme
   scheme.build_action.entries.each do |entry|
     entry.buildable_references.each do |ref|
       if (ref.respond_to?(:blueprint_name) ? ref.blueprint_name : ref.xml_element.attributes['BlueprintName']) == 'Runner'
@@ -673,7 +644,6 @@ flavors.each do |flavor|
     scheme.profile_action.buildable_product_runnable.buildable_reference.buildable_name = branded_binary
   end
 
-  # Save first
   scheme.save_as(project_path, scheme_name)
 end
   
@@ -690,10 +660,9 @@ end
 end
 
 # 7. Sanitization: Remove orphaned file refs from Flutter group
-expected_files = STANDARD_FILES # In Zero-XCConfig mode, only standard files should be in the group
+expected_files = STANDARD_FILES
 flutter_group.files.each do |file|
   next if expected_files.include?(file.path) || expected_files.include?(File.basename(file.path))
-  # Keep flavored xcconfigs if they somehow still exist (though Zero-XCConfig should have cleaned them)
   next if file.path =~ /#{flavors.join('|')}\.xcconfig/
   
   puts "🗑️ Removing orphaned file reference: #{file.path}"
@@ -734,20 +703,16 @@ end
 ''';
   }
 
-  static void reset({AppLogger? logger}) {
+  static void reset({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
-    _resetInfoPlist(log);
-    _healRunnerScheme(log);
-    // We need to pass --reset explicitly
-    _runRubyAutomationWithReset(log);
-
-    // Crucial: CocoaPods MUST be synced after configurations change
+    _resetInfoPlist(config, log);
+    _healRunnerScheme(config, log);
+    _runRubyAutomationWithReset(config, log);
     syncPods(logger: log);
-
     log.success('✔ iOS flavor configuration removed');
   }
 
-  static void _healRunnerScheme(AppLogger log) {
+  static void _healRunnerScheme(FlavorConfig config, AppLogger log) {
     final root = ConfigService.root;
     final schemePath = p.join(
         root, 'ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme');
@@ -755,7 +720,6 @@ end
     if (!file.existsSync()) return;
 
     var content = file.readAsStringSync();
-    // Restore any corrupted .app or .xctest names in the main Runner scheme
     if (content.contains('BuildableName = ".app"') ||
         content.contains('BuildableName = ".xctest"')) {
       content = content.replaceAll(
@@ -766,7 +730,6 @@ end
       log.info('   🩹 Healed Runner.xcscheme');
     }
 
-    // Also delete any weird unnamed .xcscheme
     final dotScheme = File(
         p.join(root, 'ios/Runner.xcodeproj/xcshareddata/xcschemes/.xcscheme'));
     if (dotScheme.existsSync()) {
@@ -775,15 +738,14 @@ end
     }
   }
 
-  static void _resetInfoPlist(AppLogger log) {
+  static void _resetInfoPlist(FlavorConfig config, AppLogger log) {
     final plistPath = p.join(ConfigService.root, 'ios/Runner/Info.plist');
     final file = File(plistPath);
     if (!file.existsSync()) return;
 
     var content = file.readAsStringSync();
-    final appName = ConfigService.getAppName();
+    final appName = config.appName;
 
-    // Restore CFBundleDisplayName and CFBundleName
     content = content.replaceAll(
         RegExp(r'<key>CFBundleDisplayName</key>\s*<string>.*?</string>'),
         '<key>CFBundleDisplayName</key>\n\t<string>$appName</string>');
@@ -791,7 +753,6 @@ end
         RegExp(r'<key>CFBundleName</key>\s*<string>.*?</string>'),
         '<key>CFBundleName</key>\n\t<string>$appName</string>');
 
-    // Restore CFBundleIdentifier to use variable
     final dollar = String.fromCharCode(36);
     content = content.replaceAll(
         RegExp(r'<key>CFBundleIdentifier</key>\s*<string>.*?</string>'),
@@ -800,12 +761,12 @@ end
     file.writeAsStringSync(content);
   }
 
-  static void _brandSchemes(AppLogger log) {
+  static void _brandSchemes(FlavorConfig config, AppLogger log) {
     final root = ConfigService.root;
-    final flavors = ConfigService.getFlavors();
+    final flavors = config.flavors;
     if (flavors.isEmpty) return;
 
-    final baseAppName = ConfigService.getAppName();
+    final baseAppName = config.appName;
 
     final schemeDir =
         Directory(p.join(root, 'ios/Runner.xcodeproj/xcshareddata/xcschemes'));
@@ -813,13 +774,11 @@ end
 
     for (final flavor in flavors) {
       final alias = _getAliasSync(flavor);
-      final schemeName =
-          alias.toUpperCase(); // Schemes are always uppercase alias/name
+      final schemeName = alias.toUpperCase();
 
-      if (schemeName == 'RUNNER')
-        continue; // Safety: Never touch the main Runner scheme
+      if (schemeName == 'RUNNER') continue;
 
-      final name = _getBrandedName(baseAppName, flavor);
+      final name = _getBrandedName(baseAppName, flavor, config);
       if (name.isEmpty) continue;
 
       final brandedBinary = '$name.app';
@@ -827,8 +786,6 @@ end
       final schemeFile = File(p.join(schemeDir.path, '$schemeName.xcscheme'));
       if (schemeFile.existsSync()) {
         var content = schemeFile.readAsStringSync();
-        // Look for any BuildableName that is either empty, Runner.app, or just .app
-        // and replace it with the correct branded binary name.
         final regex = RegExp(r'BuildableName = "([^"]*\.app)"');
         if (regex.hasMatch(content)) {
           content =
@@ -840,8 +797,9 @@ end
     }
   }
 
-  static String _getBrandedName(String baseName, String flavor) {
-    final productionFlavor = ConfigService.getProductionFlavor();
+  static String _getBrandedName(
+      String baseName, String flavor, FlavorConfig config) {
+    final productionFlavor = config.productionFlavor;
     if (flavor == productionFlavor) {
       return baseName;
     }
@@ -880,14 +838,23 @@ end
     log.success('✔ iOS flavor cleanup completed');
   }
 
-  static void _runRubyAutomationWithReset(AppLogger log) {
+  static void _runRubyAutomationWithReset(FlavorConfig config, AppLogger log) {
     final tempDir = Directory.systemTemp.createTempSync('flavor_cli_reset_');
     final scriptFile = File(p.join(tempDir.path, 'ios_flavor_setup.rb'));
     scriptFile.writeAsStringSync(_iosAutomationScriptContent());
 
     try {
+      // flavor_cli: added — pass BUNDLE_ID so reset can restore it
+      final env = {
+        'BUNDLE_ID': config.ios.bundleId,
+        'APP_NAME': config.appName,
+      };
       _runRubyAutomation(
-          log: log, scriptPath: scriptFile.path, args: ['--reset']);
+        log: log,
+        scriptPath: scriptFile.path,
+        args: ['--reset'],
+        environment: env,
+      );
     } finally {
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);
@@ -902,7 +869,10 @@ end
 
     try {
       _runRubyAutomation(
-          log: log, scriptPath: scriptFile.path, args: ['--delete', flavor]);
+        log: log,
+        scriptPath: scriptFile.path,
+        args: ['--delete', flavor],
+      );
     } finally {
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);
@@ -910,11 +880,15 @@ end
     }
   }
 
-  static void _runRubyAutomation(
-      {required AppLogger log,
-      required String scriptPath,
-      List<String> args = const []}) {
-    // Check if xcodeproj is installed
+  // flavor_cli: fixed — environment param was accepted but never passed to Process.runSync,
+  // causing Ruby to run with no ENV variables and fail silently with an empty exception message.
+  static void _runRubyAutomation({
+    required AppLogger log,
+    required String scriptPath,
+    List<String> args = const [],
+    Map<String, String>? environment,
+  }) {
+    // Check if xcodeproj gem is installed
     final checkResult = Process.runSync(
       'ruby',
       ['-e', 'require "xcodeproj"'],
@@ -934,10 +908,20 @@ end
       [scriptPath, ...args],
       runInShell: true,
       workingDirectory: ConfigService.root,
+      // flavor_cli: fixed — merge Platform.environment so Ruby gem paths,
+      // HOME, and RUBY_VERSION are preserved, then layer in flavor_cli vars.
+      environment: {
+        ...Platform.environment,
+        ...?environment,
+      },
     );
 
     if (result.exitCode != 0) {
-      throw Exception(result.stderr);
+      // flavor_cli: fixed — Ruby scripts use puts + exit 1, so the message
+      // lands in stdout, not stderr. Fall back to stdout if stderr is empty.
+      final stderr = result.stderr.toString().trim();
+      final stdout = result.stdout.toString().trim();
+      throw Exception(stderr.isNotEmpty ? stderr : stdout);
     }
 
     if (result.stdout.toString().trim().isNotEmpty) {
@@ -945,8 +929,6 @@ end
     }
   }
 
-  /// Sync CocoaPods configurations with the current Xcode project state.
-  /// Runs `pod install` in the ios directory if a Podfile is present.
   static void syncPods({AppLogger? logger}) {
     _syncCocoaPods(logger ?? AppLogger());
   }
@@ -961,7 +943,6 @@ end
     log.info('📦 Running pod install to update CocoaPods configurations...');
 
     try {
-      // Check if pod is installed
       final checkResult = Process.runSync('which', ['pod'], runInShell: true);
       if (checkResult.exitCode != 0) {
         log.warn(
@@ -1001,9 +982,12 @@ end
                 defaultValue: true);
 
             if (fixConfirmed) {
-              log.info('🛠️ Reinstalling CocoaPods... (This may take a few minutes, this is a one-time operation)');
-              final brewResult = Process.runSync('brew', ['reinstall', 'cocoapods'], runInShell: true);
-              
+              log.info(
+                  '🛠️ Reinstalling CocoaPods... (This may take a few minutes, this is a one-time operation)');
+              final brewResult = Process.runSync(
+                  'brew', ['reinstall', 'cocoapods'],
+                  runInShell: true);
+
               if (brewResult.exitCode == 0) {
                 log.success('✅ CocoaPods reinstalled successfully.');
                 log.info('🔄 Retrying pod install...');
@@ -1026,9 +1010,11 @@ end
                 defaultValue: true);
 
             if (fixConfirmed) {
-              log.info('🛠️ Downloading Flutter iOS artifacts... (This may take a few minutes, this is a one-time operation)');
-              final precacheResult =
-                  Process.runSync('flutter', ['precache', '--ios'], runInShell: true);
+              log.info(
+                  '🛠️ Downloading Flutter iOS artifacts... (This may take a few minutes, this is a one-time operation)');
+              final precacheResult = Process.runSync(
+                  'flutter', ['precache', '--ios'],
+                  runInShell: true);
 
               if (precacheResult.exitCode == 0) {
                 log.success('✅ Flutter artifacts downloaded successfully.');
@@ -1036,15 +1022,18 @@ end
                 _syncCocoaPods(log, isRetry: true);
                 return;
               } else {
-                log.error('❌ flutter precache failed: ${precacheResult.stderr}');
+                log.error(
+                    '❌ flutter precache failed: ${precacheResult.stderr}');
               }
             }
           }
-        } else if (combinedOutput.contains('Unicode Normalization') || 
-                   combinedOutput.contains('ASCII-8BIT')) {
+        } else if (combinedOutput.contains('Unicode Normalization') ||
+            combinedOutput.contains('ASCII-8BIT')) {
           log.info('💡 Tip: This is a Locale encoding issue.');
-          log.info('   Try adding "export LANG=en_US.UTF-8" to your ~/.zshrc or ~/.zshenv');
-        } else if (combinedOutput.contains('curl') || combinedOutput.contains('SSL')) {
+          log.info(
+              '   Try adding "export LANG=en_US.UTF-8" to your ~/.zshrc or ~/.zshenv');
+        } else if (combinedOutput.contains('curl') ||
+            combinedOutput.contains('SSL')) {
           log.info('💡 Tip: This looks like a network or certificate issue.');
         } else if (combinedOutput.contains('out of date')) {
           log.info('💡 Tip: Try running: pod repo update');

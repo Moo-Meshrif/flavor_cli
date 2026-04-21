@@ -2,36 +2,37 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'config_service.dart';
 import '../utils/logger.dart';
+import '../models/flavor_config.dart';
 
 class AndroidService {
-  static void setupFlavors({AppLogger? logger}) {
+  static void setupFlavors({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
-    final flavors = ConfigService.getFlavors();
-    final fields = ConfigService.getFields();
+    final flavors = config.flavors;
+    final fields = config.fields;
 
     // Check Groovy
     final groovyFile =
         File(p.join(ConfigService.root, 'android/app/build.gradle'));
     if (groovyFile.existsSync()) {
-      _setupGroovy(groovyFile, flavors, fields, log);
+      _setupGroovy(groovyFile, config, flavors, fields, log);
     }
 
     // Check Kotlin DSL
     final ktsFile =
         File(p.join(ConfigService.root, 'android/app/build.gradle.kts'));
     if (ktsFile.existsSync()) {
-      _setupKTS(ktsFile, flavors, fields, log);
+      _setupKTS(ktsFile, config, flavors, fields, log);
     }
 
     _updateManifest(log);
-    _handlePackageMigration(log);
+    _handlePackageMigration(config, log);
   }
 
-  static void addFlavor(String flavor, {AppLogger? logger}) {
-    setupFlavors(logger: logger);
+  static void addFlavor(String flavor, {required FlavorConfig config, AppLogger? logger}) {
+    setupFlavors(config: config, logger: logger);
   }
 
-  static void reset({AppLogger? logger}) {
+  static void reset({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
     final groovyFile =
         File(p.join(ConfigService.root, 'android/app/build.gradle'));
@@ -45,7 +46,7 @@ class AndroidService {
       _resetFile(ktsFile);
     }
 
-    _resetManifest();
+    _resetManifest(config);
     log.success('✔ Android flavor configuration removed');
   }
 
@@ -67,14 +68,15 @@ class AndroidService {
     file.writeAsStringSync(content);
   }
 
-  static void _resetManifest() {
+  static void _resetManifest(config) {
+    
     final manifestPath =
         p.join(ConfigService.root, 'android/app/src/main/AndroidManifest.xml');
     final file = File(manifestPath);
     if (!file.existsSync()) return;
 
     var content = file.readAsStringSync();
-    final appName = ConfigService.getAppName();
+    final appName = config.appName;
 
     // Replace @string/app_name with real name
     content = content.replaceFirst(
@@ -128,8 +130,7 @@ class AndroidService {
     }
   }
 
-  static void _setupGroovy(File file, List<String> flavors,
-      Map<String, String> fields, AppLogger log) {
+  static void _setupGroovy(File file, FlavorConfig config, List<String> flavors, Map<String, String> fields, AppLogger log) {
     var content = file.readAsStringSync();
 
     // 1. Ensure flavorDimensions
@@ -139,8 +140,8 @@ class AndroidService {
     }
 
     // 2. Update applicationId if configured
-    final config = ConfigService.load();
-    final appId = config['android']?['application_id'] as String?;
+    
+    final appId = config.android.applicationId as String?;
     if (appId != null) {
       final appIdRegex = RegExp(r'applicationId\s*=\s*".*?"');
       if (appIdRegex.hasMatch(content)) {
@@ -155,12 +156,12 @@ class AndroidService {
     // 3. Generate productFlavors block
     final buffer = StringBuffer();
     buffer.writeln('    productFlavors {');
-    final baseAppName = ConfigService.getAppName();
-    final prodFlavor = ConfigService.getProductionFlavor();
-    final useSuffix = ConfigService.useSuffix();
+    final baseAppName = config.appName;
+    final prodFlavor = config.productionFlavor;
+    final useSuffix = config.useSuffix;
 
     for (final flavor in flavors) {
-      final name = _getFlavoredName(baseAppName, flavor);
+      final name = _getFlavoredName(baseAppName, flavor, config);
       buffer.writeln('        $flavor {');
       buffer.writeln('            dimension "default"');
       buffer.writeln('            resValue "string", "app_name", "$name"');
@@ -176,8 +177,7 @@ class AndroidService {
     log.info('✔ Android flavors completed');
   }
 
-  static void _setupKTS(File file, List<String> flavors,
-      Map<String, String> fields, AppLogger log) {
+  static void _setupKTS(File file, FlavorConfig config, List<String> flavors, Map<String, String> fields, AppLogger log) {
     var content = file.readAsStringSync();
 
     // 1. Ensure flavorDimensions
@@ -187,8 +187,8 @@ class AndroidService {
     }
 
     // 2. Update applicationId if configured
-    final config = ConfigService.load();
-    final appId = config['android']?['application_id'] as String?;
+    
+    final appId = config.android.applicationId as String?;
     if (appId != null) {
       final appIdRegex = RegExp(r'applicationId\s*=\s*".*?"');
       if (appIdRegex.hasMatch(content)) {
@@ -203,12 +203,12 @@ class AndroidService {
     // 3. Generate productFlavors block
     final buffer = StringBuffer();
     buffer.writeln('    productFlavors {');
-    final baseAppName = ConfigService.getAppName();
-    final prodFlavor = ConfigService.getProductionFlavor();
-    final useSuffix = ConfigService.useSuffix();
+    final baseAppName = config.appName;
+    final prodFlavor = config.productionFlavor;
+    final useSuffix = config.useSuffix;
 
     for (final flavor in flavors) {
-      final name = _getFlavoredName(baseAppName, flavor);
+      final name = _getFlavoredName(baseAppName, flavor, config);
       buffer.writeln('        create("$flavor") {');
       buffer.writeln('            dimension = "default"');
       buffer.writeln('            resValue("string", "app_name", "$name")');
@@ -312,17 +312,17 @@ class AndroidService {
     return -1;
   }
 
-  static String _getFlavoredName(String baseName, String flavor) {
-    final productionFlavor = ConfigService.getProductionFlavor();
+  static String _getFlavoredName(String baseName, String flavor, FlavorConfig config) {
+    final productionFlavor = config.productionFlavor;
     if (flavor == productionFlavor) {
       return baseName;
     }
     return '$baseName-$flavor';
   }
 
-  static void _handlePackageMigration(AppLogger log) {
-    final config = ConfigService.load();
-    final targetAppId = config['android']?['application_id'] as String?;
+  static void _handlePackageMigration(FlavorConfig config, AppLogger log) {
+    
+    final targetAppId = config.android.applicationId as String?;
     if (targetAppId == null) return;
 
     final mainDir = p.join(ConfigService.root, 'android/app/src/main');

@@ -1,21 +1,19 @@
+// flavor_cli: added
 import 'dart:io';
 import 'package:path/path.dart' as p;
-import '../services/file_service.dart';
-import '../services/android_service.dart';
-import '../services/ios_service.dart';
+import '../models/flavor_config.dart';
+import '../runner/setup_runner.dart';
 import '../services/config_service.dart';
 import '../utils/logger.dart';
 import '../utils/validation.dart';
-import 'firebase_command.dart';
+import '../utils/type_utils.dart';
 
-class InitCommand {
+class InitWizard {
   final AppLogger _log;
 
-  InitCommand({AppLogger? logger}) : _log = logger ?? AppLogger();
+  InitWizard({AppLogger? logger}) : _log = logger ?? AppLogger();
 
   Future<void> execute() async {
-    if (!ConfigService.isValidProject(_log)) return;
-
     _log.info('🚀 Welcome to Flavor CLI! Let\'s set up your environment.');
 
     // 1. Choose flavors
@@ -92,7 +90,6 @@ class InitCommand {
         final type = entry[0];
         final name = entry[1];
 
-        // Basic type validation
         const validTypes = ['String', 'int', 'bool', 'double'];
         if (!validTypes.contains(type)) {
           _log.error('❌ Invalid type: "$type". Use: String, int, bool, double');
@@ -120,7 +117,6 @@ class InitCommand {
       defaultValue: 'lib/core/config/app_config.dart',
     );
 
-    // Path sanitization
     appConfigPath = appConfigPath.trim();
     if (appConfigPath.startsWith('Example: ')) {
       appConfigPath = appConfigPath.replaceFirst('Example: ', '');
@@ -159,152 +155,123 @@ class InitCommand {
       );
     }
 
-    // 7. Production Package ID
+    // 7. Base Package ID
     final detectedId = _detectPackageId();
     final packageId = _log.prompt(
       '👉 What is your Production Package ID? (Your unique App ID, e.g., com.example.app)',
       defaultValue: detectedId,
     );
 
-    // 8. Package ID Strategy (Forced to separate IDs for better isolation)
-    final useSuffix = true;
+    // 8. ID strategy
+    final idStrategy = _log.chooseOne(
+      '👉 Which package ID strategy do you prefer?',
+      choices: [
+        'Unique IDs per flavor (recommended) — appends .flavorName to non-production flavors',
+        'Shared ID — all flavors use the same package ID',
+      ],
+    );
+    final useSuffix = idStrategy.startsWith('Unique');
 
-    try {
-      // ========================
-      // 2. CONFIG INIT
-      // ========================
-      ConfigService.init(
-        flavors: flavors,
-        fields: fields,
-        appConfigPath: appConfigPath,
-        useSeparateMains: useSeparateMains,
-        appName: appName,
-        productionFlavor: productionFlavor,
-        useSuffix: useSuffix,
-        packageId: packageId,
-      );
+    // 9. Firebase
+    FirebaseConfig? firebaseConfig;
+    bool enableFirebase = ConfigService.hasFirebase();
+    if (enableFirebase) {
+      _log.info('✨ Firebase detected in project, enabling support.');
+    } else {
+      enableFirebase =
+          _log.confirm('👉 Enable Firebase support?', defaultValue: false);
+    }
 
-      _log.info('📦 Initializing with flavors: ${flavors.join(", ")}');
-
-      // ========================
-      // 3. FILE STRUCTURE
-      // ========================
-      FileService.createStructure();
-
-      FileService.createAppConfig(overwrite: true);
-      FileService.createScripts();
-      FileService.updateTests();
-
-      bool overwriteMains = true;
-      final existingMains = _checkExistingMains(flavors, useSeparateMains);
-      if (existingMains.isNotEmpty) {
-        final choice = _log.chooseOne(
-          '👉 Main file(s) already exist. How would you like to proceed?',
-          choices: [
-            'Integrate setup into existing files',
-            'Replace with flavor boilerplate',
-          ],
-        );
-
-        if (choice == 'Integrate setup into existing files') {
-          FileService.integrateMainFiles(
-              flavors: flavors, separate: useSeparateMains);
-          overwriteMains = false; // Already integrated
-        } else {
-          overwriteMains = true; // Replace
-        }
+    if (enableFirebase) {
+      final List<String> strategyChoices;
+      if (useSuffix) {
+        strategyChoices = [
+          'unique_id_multi_project',
+          'unique_id_single_project',
+        ];
+      } else {
+        strategyChoices = [
+          'shared_id_single_project',
+        ];
       }
 
-      if (overwriteMains || existingMains.isEmpty) {
-        FileService.createMainFiles(overwrite: overwriteMains);
+      final strategy = strategyChoices.length > 1
+          ? _log.chooseOne('👉 Which Firebase strategy do you prefer?',
+              choices: strategyChoices)
+          : strategyChoices.first;
+
+      if (strategyChoices.length == 1) {
+        _log.info(
+            'ℹ️ Using Firebase strategy: $strategy (matches your "Shared ID" strategy)');
       }
 
-      // ========================
-      // 4. PLATFORM SETUP
-      // ========================
-      _safe(() => AndroidService.setupFlavors(logger: _log), 'Android flavors');
-      _safe(() => IOSService.setupSchemes(logger: _log), 'iOS setup');
-
-      // ========================
-      // 6. CLEANUP
-      // ========================
-      final orphans = FileService.getOrphanedFlavors(flavors);
-      if (orphans.isNotEmpty) {
-        FileService.cleanupFlavors(orphans.toList());
-        for (final orphan in orphans) {
-          _safe(() => IOSService.removeFlavorSchemes(orphan, logger: _log),
-              'iOS cleanup for $orphan');
-        }
-        _log.info('✔ Orphaned files cleaned up (${orphans.join(", ")})');
-      }
-
-      // Cleanup root main.dart if using separate mains
-      if (useSeparateMains) {
-        final rootMain = File(p.join(ConfigService.root, 'lib/main.dart'));
-        if (rootMain.existsSync()) {
-          rootMain.deleteSync();
-          _log.info(
-              '✔ Root lib/main.dart removed (using separate flavor mains)');
+      final projects = <String, String>{};
+      if (strategy == 'unique_id_multi_project') {
+        for (final flavor in flavors) {
+          final projectId =
+              _log.prompt('👉 Enter Firebase Project ID for flavor "$flavor":');
+          projects[flavor] = projectId;
         }
       } else {
-        // Cleanup lib/main directory if it exists
-        final mainDir = Directory(p.join(ConfigService.root, 'lib/main'));
-        if (mainDir.existsSync()) {
-          mainDir.deleteSync(recursive: true);
-          _log.info(
-              '✔ lib/main directory removed (not needed for single main)');
-        }
+        final projectId = _log.prompt('👉 Enter your Firebase Project ID:');
+        projects['all'] = projectId;
       }
 
-      _log.success('✅ Flavor system initialized successfully!');
-
-      // Check and re-initialize Firebase if necessary
-      await FirebaseCommand.checkAndReinit(_log);
-
-      FileService.updateVSCodeLaunchConfig();
-    } catch (e) {
-      _log.error('❌ Failed to initialize: $e');
+      firebaseConfig = FirebaseConfig(
+        strategy: strategy,
+        projects: projects,
+      );
     }
-  }
 
-  void _safe(Function action, String label) {
-    try {
-      action();
-    } catch (e) {
-      _log.warn('⚠️ $label encountered an issue: $e');
-    }
-  }
+    // 10. Per-flavor field values
+    final flavorValues = <String, Map<String, dynamic>>{};
+    _log.info('\n📝 Now let\'s set the values for your variables per flavor:');
 
-  List<String> _checkExistingMains(List<String> flavors, bool separate) {
-    final existing = <String>[];
-    if (separate) {
-      for (final f in flavors) {
-        if (File('lib/main/main_$f.dart').existsSync()) {
-          existing.add('lib/main/main_$f.dart');
-        }
-      }
-    } else {
-      if (File('lib/main.dart').existsSync()) {
-        existing.add('lib/main.dart');
+    for (final fieldName in fields.keys) {
+      final type = fields[fieldName]!;
+      _log.info('Variable: $fieldName ($type)');
+      for (final flavor in flavors) {
+        final defaultValue = TypeUtils.getDefaultValueForType(type);
+        final input = _log
+            .prompt('   → Value for $fieldName ($flavor):',
+                defaultValue: defaultValue)
+            .trim();
+        final typedVal = TypeUtils.parseToType(type, input);
+        flavorValues.putIfAbsent(flavor, () => {})[fieldName] = typedVal;
       }
     }
-    return existing;
+    _log.info('');
+
+    // Create FlavorConfig using collected data
+    final config = FlavorConfig(
+      flavors: flavors,
+      appName: appName,
+      fields: fields,
+      flavorValues: flavorValues,
+      appConfigPath: appConfigPath,
+      useSeparateMains: useSeparateMains,
+      useSuffix: useSuffix,
+      android: AndroidConfig(applicationId: packageId),
+      ios: IosConfig(bundleId: packageId),
+      productionFlavor: productionFlavor,
+      firebase: firebaseConfig,
+    );
+
+    // Call SetupRunner
+    await SetupRunner(logger: _log).run(config);
   }
 
   String _detectAppName() {
-    // 1. Try Config
     try {
-      final existingName = ConfigService.getAppName();
+      final existingName = ConfigService.load().appName;
       if (existingName != 'MyApp') return existingName;
     } catch (_) {}
 
-    // 2. Try Info.plist (if not already flavored)
     try {
       final plistPath = p.join(ConfigService.root, 'ios/Runner/Info.plist');
       final file = File(plistPath);
       if (file.existsSync()) {
         final content = file.readAsStringSync();
-        // More robust regex for CFBundleDisplayName
         final match = RegExp(
                 r'<key>CFBundleDisplayName</key>\s*<string>([^$]*?)</string>',
                 caseSensitive: false)
@@ -314,7 +281,6 @@ class InitCommand {
           if (name != null && name.isNotEmpty) return name;
         }
 
-        // Fallback to CFBundleName
         final nameMatch = RegExp(
                 r'<key>CFBundleName</key>\s*<string>([^$]*?)</string>',
                 caseSensitive: false)
@@ -326,7 +292,6 @@ class InitCommand {
       }
     } catch (_) {}
 
-    // 3. Try pubspec.yaml
     try {
       final pubspec = File(p.join(ConfigService.root, 'pubspec.yaml'));
       if (pubspec.existsSync()) {
@@ -335,7 +300,6 @@ class InitCommand {
             RegExp(r'^name:\s*(.*)$', multiLine: true).firstMatch(content);
         if (nameMatch != null) {
           final name = nameMatch.group(1)!.trim();
-          // Capitalize first letter as it is usually a lowercase package name
           return name[0].toUpperCase() + name.substring(1);
         }
       }
@@ -346,7 +310,6 @@ class InitCommand {
 
   String _detectPackageId() {
     final root = ConfigService.root;
-    // 1. Try Android build.gradle.kts
     try {
       final ktsFile = File(p.join(root, 'android/app/build.gradle.kts'));
       if (ktsFile.existsSync()) {
@@ -357,7 +320,6 @@ class InitCommand {
       }
     } catch (_) {}
 
-    // 2. Try Android build.gradle (Groovy)
     try {
       final groovyFile = File(p.join(root, 'android/app/build.gradle'));
       if (groovyFile.existsSync()) {
@@ -368,11 +330,9 @@ class InitCommand {
       }
     } catch (_) {}
 
-    // 3. Try Config
     try {
       final config = ConfigService.load();
-      final appId = config['android']?['application_id'];
-      if (appId != null) return appId;
+      return config.android.applicationId;
     } catch (_) {}
 
     return 'com.example.app';

@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'package:flavor_cli/src/utils/logger.dart';
+import 'package:flavor_cli/utils/logger.dart';
 import 'package:path/path.dart' as p;
-import 'package:flavor_cli/src/services/config_service.dart';
+import 'package:flavor_cli/services/config_service.dart';
 
 class FakeAppLogger implements AppLogger {
   final List<String> prompts;
@@ -35,12 +35,13 @@ class FakeAppLogger implements AppLogger {
   }
 
   @override
-  String chooseOne(String message, {required List<String> choices}) {
-    logs.add('[CHOOSE] $message | Choices: ${choices.join(", ")}');
+  String chooseOne(String message,
+      {required List<String> choices, String? defaultValue}) {
+    logs.add('[CHOOSE] $message | Choices: ${choices.join(", ")} (default: $defaultValue)');
     if (_choiceIndex < this.choices.length) {
       return this.choices[_choiceIndex++];
     }
-    return choices.first;
+    return defaultValue ?? choices.first;
   }
 
   @override
@@ -60,13 +61,15 @@ class FakeAppLogger implements AppLogger {
 Future<Directory> createTestSandbox() async {
   final tempDir = await Directory.systemTemp.createTemp('flavor_test_');
   ConfigService.root = tempDir.path;
-  
+
   // Create minimal pubspec
-  await File(p.join(tempDir.path, 'pubspec.yaml')).writeAsString('name: test_app');
-  
+  await File(p.join(tempDir.path, 'pubspec.yaml'))
+      .writeAsString('name: test_app');
+
   // Create minimal android structure
   await Directory(p.join(tempDir.path, 'android/app')).create(recursive: true);
-  await File(p.join(tempDir.path, 'android/app/build.gradle.kts')).writeAsString('''
+  await File(p.join(tempDir.path, 'android/app/build.gradle.kts'))
+      .writeAsString('''
 plugins {
     id("com.android.application")
 }
@@ -82,10 +85,15 @@ android {
   // Create minimal ios structure
   await Directory(p.join(tempDir.path, 'ios/Runner')).create(recursive: true);
   await Directory(p.join(tempDir.path, 'ios/Flutter')).create(recursive: true);
+  await File(p.join(tempDir.path, 'ios/Runner/Info.plist')).writeAsString(
+      '<plist><dict><key>CFBundleName</key><string>TestApp</string></dict></plist>');
+  await File(p.join(tempDir.path, 'ios/Runner.xcodeproj/project.pbxproj'))
+      .create(recursive: true);
 
   // Create lib/main.dart
   await Directory(p.join(tempDir.path, 'lib')).create(recursive: true);
-  await File(p.join(tempDir.path, 'lib/main.dart')).writeAsString('void main() {}');
+  await File(p.join(tempDir.path, 'lib/main.dart'))
+      .writeAsString('void main() {}');
 
   return tempDir;
 }
