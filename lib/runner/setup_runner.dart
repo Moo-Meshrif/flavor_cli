@@ -13,7 +13,8 @@ class SetupRunner {
 
   SetupRunner({AppLogger? logger}) : _log = logger ?? AppLogger();
 
-  Future<void> run(FlavorConfig config) async {
+  Future<void> run(FlavorConfig config,
+      {String? newFlavor, bool skipFirebase = false}) async {
     try {
       // 1. Save Config as the source of truth
       ConfigService.save(config);
@@ -21,9 +22,11 @@ class SetupRunner {
 
       // 2. File Structure
       FileService.createStructure();
-      FileService.createAppConfig(overwrite: true);
-      FileService.createScripts();
-      FileService.updateTests();
+       FileService.createAppConfig(overwrite: true);
+       if (config.generateScripts) {
+         FileService.createScripts();
+       }
+       FileService.updateTests();
 
       bool overwriteMains = true;
       final existingMains =
@@ -36,9 +39,11 @@ class SetupRunner {
         overwriteMains = false;
       }
 
-      if (overwriteMains || existingMains.isEmpty) {
-        FileService.createMainFiles(overwrite: overwriteMains);
-      } else {
+      // Always ensure main files exist (create missing ones as boilerplate)
+      FileService.createMainFiles(overwrite: overwriteMains);
+
+      // If we are not in full overwrite mode, integrate the existing/new files to ensure they are linked
+      if (!overwriteMains) {
         FileService.integrateMainFiles(
             flavors: config.flavors, separate: config.useSeparateMains);
       }
@@ -75,8 +80,15 @@ class SetupRunner {
 
       _log.success('✅ Flavor system synchronized successfully!');
 
+      // Ensure Firebase entry points are synchronized (silently)
+      if (ConfigService.hasFirebase()) {
+        FileService.injectFirebase(separate: config.useSeparateMains);
+      }
+
       // Check and re-initialize Firebase if necessary
-      await FirebaseCommand.checkAndReinit(_log);
+      if (!skipFirebase) {
+        await FirebaseCommand.checkAndReinit(_log, targetFlavor: newFlavor);
+      }
 
       FileService.updateVSCodeLaunchConfig();
     } catch (e) {
@@ -376,25 +388,7 @@ class SetupRunner {
   }
 
   String _cleanContent(String content) {
-    var cleaned = content;
-
-    // 1. Remove Firebase init (multi-line)
-    final firebaseInitRegex = RegExp(
-        r'^\s*WidgetsFlutterBinding\.ensureInitialized\(\);[\s\S]*?await Firebase\.initializeApp\(.*?\);[\t ]*\n?',
-        multiLine: true);
-    cleaned = cleaned.replaceAll(firebaseInitRegex, '');
-
-    // 2. Remove Firebase imports and options imports (handles single/double quotes, aliases, and indentation)
-    cleaned = cleaned.replaceAll(
-        RegExp(
-            r'''^\s*import\s+['"]package:firebase_core/firebase_core\.dart['"];[\t ]*\n?''',
-            multiLine: true),
-        '');
-    cleaned = cleaned.replaceAll(
-        RegExp(
-            r'''^\s*import\s+['"].*?firebase_options.*?\.dart['"](?:\s+as\s+\w+)?;[\t ]*\n?''',
-            multiLine: true),
-        '');
+    var cleaned = FileService.removeFirebaseFromContent(content);
 
     // 3. Remove AppConfig imports
     cleaned = cleaned.replaceAll(

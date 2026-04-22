@@ -67,8 +67,9 @@ class RunCommand {
     // Add custom fields as dart-defines
     final values = config.flavorValues[flavor] ?? {};
     for (final entry in values.entries) {
-      if (entry.value.isNotEmpty) {
-        runArgs.add('--dart-define=${entry.key}=${entry.value}');
+      final value = entry.value;
+      if (value is! String || value.isNotEmpty) {
+        runArgs.add('--dart-define=${entry.key}=$value');
       }
     }
 

@@ -69,7 +69,7 @@ class DeleteCommand {
       }
       
       // Delegate completely to SetupRunner. It handles deleting orphaned files.
-      await SetupRunner(logger: _log).run(ConfigService.load());
+      await SetupRunner(logger: _log).run(ConfigService.load(), skipFirebase: true);
 
       _log.success('✅ Flavor "$flavorToDelete" removed successfully!');
     } catch (e) {

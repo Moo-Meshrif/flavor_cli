@@ -47,7 +47,7 @@ class AddCommand {
       ConfigService.addFlavor(newFlavor);
 
       // 2. Delegate all file structure and platform injections to SetupRunner natively
-      await SetupRunner(logger: _log).run(ConfigService.load());
+      await SetupRunner(logger: _log).run(ConfigService.load(), newFlavor: newFlavor);
 
       _log.success('✅ Flavor "$newFlavor" added successfully!');
     } catch (e) {

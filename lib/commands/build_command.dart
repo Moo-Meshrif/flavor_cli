@@ -76,8 +76,9 @@ class BuildCommand {
     // Add custom fields
     final values = config.flavorValues[flavor] ?? {};
     for (final entry in values.entries) {
-      if (entry.value.isNotEmpty) {
-        processArgs.add('--dart-define=${entry.key}=${entry.value}');
+      final value = entry.value;
+      if (value is! String || value.isNotEmpty) {
+        processArgs.add('--dart-define=${entry.key}=$value');
       }
     }
 

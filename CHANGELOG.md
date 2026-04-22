@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.6
+
+*   **Fixed Main File Generation**: Resolved an issue where adding a new flavor with the "Separate Main Files" strategy failed to generate the required Dart entry point.
+*   **Firebase Optimization**: Optimized the Firebase setup flow to skip redundant re-initialization prompts for projects using "Shared ID" strategies.
+*   **Targeted Commands**: Applied Firebase optimizations specifically to the `add` and `replace` commands to avoid interrupting common flavor management workflows.
+*   **Refined Firebase Replacement**: When renaming a flavor in "Unique ID" projects, old options are now automatically deleted and entry points are sanitized to ensure a clean re-initialization process.
+*   **Deletion Optimization**: Added a bypass for Firebase re-initialization prompts during flavor deletions to streamline the cleanup process.
+*   **Simplified Project Structure**: Disabled the automatic generation of the `scripts/` folder by default to ensure a cleaner project root.
+*   **Internal Robustness**: Enhanced `SetupRunner` and `FirebaseCommand` to maintain better context during flavor additions and renames.
+
 ## 0.0.5
 
 *   **Enhanced documentation**: Make it more concise and clear.

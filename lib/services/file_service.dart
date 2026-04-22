@@ -692,16 +692,80 @@ $command
       }
     }
 
-    // 4. Rename Firebase options if exists
+    // 4. Firebase options handling
+    final config = ConfigService.load();
+    final strategy = config.firebase?.strategy ?? '';
+    final isUniqueId = strategy.contains('unique_id');
+
     final oldFirebasePath = p.join(root, 'lib/firebase_options_$oldName.dart');
     final newFirebasePath = p.join(root, 'lib/firebase_options_$newName.dart');
     final oldFirebaseFile = File(oldFirebasePath);
 
     if (oldFirebaseFile.existsSync()) {
-      log.info(
-          '📝 Renaming Firebase options: ${p.basename(oldFirebasePath)} -> ${p.basename(newFirebasePath)}');
-      oldFirebaseFile.renameSync(newFirebasePath);
+      if (isUniqueId) {
+        log.info('🗑️ Deleting old Firebase options (Unique ID strategy): ${p.basename(oldFirebasePath)}');
+        oldFirebaseFile.deleteSync();
+        
+        // Also ensure the main files are cleaned if they were using these options
+        _cleanupFirebaseFromEntryPoints(oldName, newName, log);
+      } else {
+        log.info(
+            '📝 Renaming Firebase options: ${p.basename(oldFirebasePath)} -> ${p.basename(newFirebasePath)}');
+        oldFirebaseFile.renameSync(newFirebasePath);
+      }
     }
+  }
+
+  static void _cleanupFirebaseFromEntryPoints(String oldName, String newName, AppLogger log) {
+    final root = ConfigService.root;
+    
+    // Separate main
+    final newMainPath = p.join(root, 'lib/main/main_$newName.dart');
+    final newMainFile = File(newMainPath);
+    if (newMainFile.existsSync()) {
+      log.info('🧹 Cleaning Firebase from new main: ${p.basename(newMainPath)}');
+      newMainFile.writeAsStringSync(removeFirebaseFromContent(newMainFile.readAsStringSync()));
+    }
+
+    // Single main
+    final rootMain = File(p.join(root, 'lib/main.dart'));
+    if (rootMain.existsSync()) {
+      log.info('🧹 Cleaning Firebase from lib/main.dart');
+      rootMain.writeAsStringSync(removeFirebaseFromContent(rootMain.readAsStringSync()));
+    }
+  }
+
+  static String removeFirebaseFromContent(String content) {
+    var cleaned = content;
+
+    // 1. Remove Firebase init (multi-line)
+    final firebaseInitRegex = RegExp(
+        r'^\s*WidgetsFlutterBinding\.ensureInitialized\(\);[\s\S]*?await Firebase\.initializeApp\([\s\S]*?\);[\t ]*\n?',
+        multiLine: true);
+    cleaned = cleaned.replaceAll(firebaseInitRegex, '');
+
+    // 2. Remove Firebase imports and options imports (handles single/double quotes, aliases, and indentation)
+    cleaned = cleaned.replaceAll(
+        RegExp(
+            r'''^\s*import\s+['"]package:firebase_core/firebase_core\.dart['"];[\t ]*\n?''',
+            multiLine: true),
+        '');
+    cleaned = cleaned.replaceAll(
+        RegExp(
+            r'''^\s*import\s+['"].*?firebase_options.*?\.dart['"](?:\s+as\s+\w+)?;[\t ]*\n?''',
+            multiLine: true),
+        '');
+
+    // 3. Fix main() signature if it was made async for Firebase but no longer needs to be
+    if (!cleaned.contains('await ')) {
+      cleaned = cleaned.replaceFirst(
+          RegExp(r'void main\s*\(\s*\) async\s*\{'), 'void main() {');
+    }
+
+    // 4. Cleanup multiple newlines
+    cleaned = cleaned.replaceAll(RegExp(r'\n{3,}'), '\n\n');
+
+    return cleaned.trim() + '\n';
   }
 
   static void injectFirebase({required bool separate, String? flavor}) {

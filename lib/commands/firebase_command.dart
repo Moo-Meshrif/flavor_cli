@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path/path.dart' as p;
 import '../services/config_service.dart';
 import '../services/file_service.dart';
 import '../models/flavor_config.dart';
@@ -94,9 +95,11 @@ class FirebaseCommand {
     }
 
     _log.info('📦 Adding firebase_core dependency...');
-    final pubAddResult = await Process.run('flutter', ['pub', 'add', 'firebase_core']);
+    final pubAddResult =
+        await Process.run('flutter', ['pub', 'add', 'firebase_core']);
     if (pubAddResult.exitCode != 0) {
-      _log.warn('⚠️ Could not automatically add firebase_core to pubspec.yaml. Please add it manually.');
+      _log.warn(
+          '⚠️ Could not automatically add firebase_core to pubspec.yaml. Please add it manually.');
     }
 
     _log.success('✅ Firebase setup completed for all targets.');
@@ -186,10 +189,28 @@ class FirebaseCommand {
 
   static Future<void> checkAndReinit(AppLogger log,
       {String? targetFlavor}) async {
-    final config = ConfigService.isInitialized() ? ConfigService.load() : null;
-    if (config?.firebase == null) return;
+    if (!ConfigService.isInitialized()) return;
+    final config = ConfigService.load();
+    if (config.firebase == null) return;
 
     if (!ConfigService.hasFirebase()) return;
+
+    final strategy = config.firebase!.strategy;
+    final isSharedId = strategy.contains('shared_id');
+
+    // OPTIMIZATION: If using Shared ID and config already exists, just link it without prompting.
+    // This applies to both 'add' and 'replace' scenarios.
+    if (isSharedId) {
+      final optionsFile =
+          File(p.join(ConfigService.root, 'lib/firebase_options.dart'));
+      if (optionsFile.existsSync()) {
+        log.info(
+            'ℹ️ Firebase Shared ID strategy detected. Automatically linking configuration...');
+        FileService.injectFirebase(
+            separate: config.useSeparateMains, flavor: targetFlavor);
+        return;
+      }
+    }
 
     final prompt = targetFlavor != null
         ? '\n🔥 Firebase detected. Re-run Firebase setup for flavor "$targetFlavor"?'

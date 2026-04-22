@@ -95,6 +95,7 @@ class FlavorConfig {
   final IosConfig ios;
   final String productionFlavor;
   final FirebaseConfig? firebase;
+  final bool generateScripts;
 
   const FlavorConfig({
     required this.flavors,
@@ -108,6 +109,7 @@ class FlavorConfig {
     required this.ios,
     required this.productionFlavor,
     this.firebase,
+    this.generateScripts = false,
   });
 
   factory FlavorConfig.fromJson(Map<String, dynamic> json) {
@@ -130,6 +132,7 @@ class FlavorConfig {
       firebase: json['firebase'] != null 
           ? FirebaseConfig.fromJson(json['firebase'] as Map<String, dynamic>) 
           : null,
+      generateScripts: json['generate_scripts'] as bool? ?? false,
     );
   }
 
@@ -145,6 +148,7 @@ class FlavorConfig {
       'android': android.toJson(),
       'ios': ios.toJson(),
       'production_flavor': productionFlavor,
+      'generate_scripts': generateScripts,
     };
     if (firebase != null) {
       json['firebase'] = firebase!.toJson();
@@ -164,6 +168,7 @@ class FlavorConfig {
     IosConfig? ios,
     String? productionFlavor,
     FirebaseConfig? firebase,
+    bool? generateScripts,
   }) {
     return FlavorConfig(
       flavors: flavors ?? this.flavors,
@@ -177,6 +182,7 @@ class FlavorConfig {
       ios: ios ?? this.ios,
       productionFlavor: productionFlavor ?? this.productionFlavor,
       firebase: firebase ?? this.firebase,
+      generateScripts: generateScripts ?? this.generateScripts,
     );
   }
 }

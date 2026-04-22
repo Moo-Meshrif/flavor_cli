@@ -255,6 +255,7 @@ class InitWizard {
       ios: IosConfig(bundleId: packageId),
       productionFlavor: productionFlavor,
       firebase: firebaseConfig,
+      generateScripts: false,
     );
 
     // Call SetupRunner
