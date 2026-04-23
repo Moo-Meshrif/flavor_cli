@@ -214,9 +214,11 @@ class FileService {
 
   // _getDefaultValueForType removed in favor of TypeUtils
 
-  static void createMainFiles({bool overwrite = true}) {
-    final useSeparate = ConfigService.load().useSeparateMains;
-    final flavors = ConfigService.load().flavors;
+  static void createMainFiles({bool overwrite = true, String? productionContent}) {
+    final config = ConfigService.load();
+    final useSeparate = config.useSeparateMains;
+    final flavors = config.flavors;
+    final prodFlavor = config.productionFlavor;
 
     if (useSeparate) {
       for (final flavor in flavors) {
@@ -224,7 +226,11 @@ class FileService {
             File(p.join(ConfigService.root, 'lib/main/main_$flavor.dart'));
         if (!overwrite && file.existsSync()) continue;
 
-        file.writeAsStringSync(_mainBoilerplate(flavor));
+        if (flavor == prodFlavor && productionContent != null) {
+          file.writeAsStringSync(productionContent);
+        } else {
+          file.writeAsStringSync(_mainBoilerplate(flavor));
+        }
       }
     } else {
       final file = File(p.join(ConfigService.root, 'lib/main.dart'));

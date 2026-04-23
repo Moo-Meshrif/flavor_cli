@@ -202,14 +202,20 @@ class ConfigService {
   // ========================
   // FIREBASE DETECTION
   // ========================
-  static bool hasFirebase() {
+
+  /// Checks if Firebase is configured in the .flavor_cli.json file.
+  static bool hasFirebaseConfig() {
     try {
       if (isInitialized()) {
-        final config = load();
-        if (config.firebase != null) return true;
+        final config = loadLenient();
+        return config?.firebase != null;
       }
     } catch (_) {}
+    return false;
+  }
 
+  /// Checks if Firebase files or dependencies actually exist in the project.
+  static bool hasFirebaseFiles() {
     try {
       final pubspec = File(p.join(root, 'pubspec.yaml'));
       if (pubspec.existsSync()) {
@@ -224,8 +230,21 @@ class ConfigService {
           .existsSync()) {
         return true;
       }
-    } catch (_) {}
 
+      // Check for flavored options in lib/
+      final libDir = Directory(p.join(root, 'lib'));
+      if (libDir.existsSync()) {
+        final files = libDir.listSync();
+        if (files.any((f) => p.basename(f.path).startsWith('firebase_options'))) {
+          return true;
+        }
+      }
+    } catch (_) {}
     return false;
+  }
+
+  /// General check for Firebase presence (either config or files).
+  static bool hasFirebase() {
+    return hasFirebaseConfig() || hasFirebaseFiles();
   }
 }

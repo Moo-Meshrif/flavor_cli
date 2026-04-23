@@ -193,13 +193,26 @@ class FirebaseCommand {
     final config = ConfigService.load();
     if (config.firebase == null) return;
 
-    if (!ConfigService.hasFirebase()) return;
+    final hasFiles = ConfigService.hasFirebaseFiles();
 
+    // 1. If configured but NO files exist, this is a fresh setup from init or a reset.
+    if (!hasFiles) {
+      final prompt = targetFlavor != null
+          ? '\n🔥 Firebase configured but not integrated. Run Firebase setup for flavor "$targetFlavor" now?'
+          : '\n🔥 Firebase configured but not integrated. Run Firebase setup for all flavors now?';
+
+      if (log.confirm(prompt, defaultValue: true)) {
+        await FirebaseCommand(logger: log, fromHook: true)
+            .execute(targetFlavor: targetFlavor);
+      }
+      return;
+    }
+
+    // 2. If files DO exist, we follow the existing prompt/link logic.
     final strategy = config.firebase!.strategy;
     final isSharedId = strategy.contains('shared_id');
 
     // OPTIMIZATION: If using Shared ID and config already exists, just link it without prompting.
-    // This applies to both 'add' and 'replace' scenarios.
     if (isSharedId) {
       final optionsFile =
           File(p.join(ConfigService.root, 'lib/firebase_options.dart'));

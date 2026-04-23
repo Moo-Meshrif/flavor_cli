@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.7
+
+*   **Main File Preservation**: Automatically preserves existing `main.dart` content when migrating to the "Separate Main Files" strategy by moving it to the production flavor entry point.
+*   **Enhanced Reset Command**: The `reset` command now restores original code from flavor entry points back to `main.dart`, ensuring no code is lost when reverting flavor setups.
+*   **Smart Firebase Detection**: Improved `ConfigService` to distinguish between Firebase configuration and project integration, enabling more accurate setup prompts.
+*   **Automated Firebase Integration**: The CLI now detects missing Firebase files in configured projects and offers to run the integration automatically during flavor additions or resets.
+*   **Internal Refinements**: Refactored `SetupRunner` and `FileService` for more robust file handling and synchronization.
+
 ## 0.0.6
 
 *   **Fixed Main File Generation**: Resolved an issue where adding a new flavor with the "Separate Main Files" strategy failed to generate the required Dart entry point.

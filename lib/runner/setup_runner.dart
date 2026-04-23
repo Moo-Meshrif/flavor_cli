@@ -28,22 +28,31 @@ class SetupRunner {
        }
        FileService.updateTests();
 
+      String? oldMainContent;
+      if (config.useSeparateMains) {
+        final mainFile = File(p.join(ConfigService.root, 'lib/main.dart'));
+        if (mainFile.existsSync()) {
+          oldMainContent = mainFile.readAsStringSync();
+          _log.info(
+              '📝 Preserving your existing main.dart content into the production flavor...');
+        }
+      }
+
       bool overwriteMains = true;
       final existingMains =
           _checkExistingMains(config.flavors, config.useSeparateMains);
 
       if (existingMains.isNotEmpty) {
-        // If we are just regenerating in the background, we shouldn't prompt if already set up.
-        // But if there's confusion, prompt.
-        // Actually, assuming SetupRunner is called headless, we trust existing files.
         overwriteMains = false;
       }
 
-      // Always ensure main files exist (create missing ones as boilerplate)
-      FileService.createMainFiles(overwrite: overwriteMains);
+      // Always ensure main files exist
+      FileService.createMainFiles(
+          overwrite: overwriteMains, productionContent: oldMainContent);
 
-      // If we are not in full overwrite mode, integrate the existing/new files to ensure they are linked
-      if (!overwriteMains) {
+      // If we are not in full overwrite mode OR we preserved old content,
+      // integrate the files to ensure they have AppConfig.init and proper imports.
+      if (!overwriteMains || oldMainContent != null) {
         FileService.integrateMainFiles(
             flavors: config.flavors, separate: config.useSeparateMains);
       }
@@ -81,7 +90,7 @@ class SetupRunner {
       _log.success('✅ Flavor system synchronized successfully!');
 
       // Ensure Firebase entry points are synchronized (silently)
-      if (ConfigService.hasFirebase()) {
+      if (ConfigService.hasFirebaseFiles()) {
         FileService.injectFirebase(separate: config.useSeparateMains);
       }
 
@@ -213,7 +222,7 @@ class SetupRunner {
     }
 
     // 2. Main Dart Restoration
-    _restoreMainDart(root, log);
+    _restoreMainDart(root, log, config);
 
     // 3. File Cleanup
     final allPossibleOrphans = FileService.getOrphanedFlavors([]);
@@ -376,9 +385,21 @@ class SetupRunner {
     }
   }
 
-  void _restoreMainDart(String root, AppLogger log) {
+  void _restoreMainDart(String root, AppLogger log, FlavorConfig config) {
     final mainPath = p.join(root, 'lib/main.dart');
     final mainFile = File(mainPath);
+
+    // Try to restore from production main if separate mains were used
+    if (config.useSeparateMains) {
+      final prodMainPath = p.join(
+          root, 'lib/main/main_${config.productionFlavor}.dart');
+      final prodMainFile = File(prodMainPath);
+      if (prodMainFile.existsSync()) {
+        mainFile
+            .writeAsStringSync(_cleanContent(prodMainFile.readAsStringSync()));
+        return;
+      }
+    }
 
     if (mainFile.existsSync()) {
       mainFile.writeAsStringSync(_cleanContent(mainFile.readAsStringSync()));
