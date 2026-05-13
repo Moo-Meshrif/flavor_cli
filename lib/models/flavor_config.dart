@@ -1,4 +1,4 @@
-// flavor_cli: added
+/// Configuration for Firebase integration.
 class FirebaseConfig {
   final String strategy;
   final Map<String, String> projects;
@@ -31,6 +31,7 @@ class FirebaseConfig {
   }
 }
 
+/// Android-specific configuration.
 class AndroidConfig {
   final String applicationId;
 
@@ -57,6 +58,7 @@ class AndroidConfig {
   }
 }
 
+/// iOS-specific configuration.
 class IosConfig {
   final String bundleId;
 
@@ -83,6 +85,7 @@ class IosConfig {
   }
 }
 
+/// The main configuration for the flavor_cli project.
 class FlavorConfig {
   final List<String> flavors;
   final String appName;
@@ -123,14 +126,16 @@ class FlavorConfig {
           Map<String, dynamic>.from(value as Map? ?? {}),
         ),
       ),
-      appConfigPath: json['app_config_path'] as String? ?? 'lib/core/config/app_config.dart',
+      appConfigPath: json['app_config_path'] as String? ??
+          'lib/core/config/app_config.dart',
       useSeparateMains: json['use_separate_mains'] as bool? ?? true,
       useSuffix: json['use_suffix'] as bool? ?? true,
-      android: AndroidConfig.fromJson(json['android'] as Map<String, dynamic>? ?? {}),
+      android: AndroidConfig.fromJson(
+          json['android'] as Map<String, dynamic>? ?? {}),
       ios: IosConfig.fromJson(json['ios'] as Map<String, dynamic>? ?? {}),
       productionFlavor: json['production_flavor'] as String? ?? '',
-      firebase: json['firebase'] != null 
-          ? FirebaseConfig.fromJson(json['firebase'] as Map<String, dynamic>) 
+      firebase: json['firebase'] != null
+          ? FirebaseConfig.fromJson(json['firebase'] as Map<String, dynamic>)
           : null,
       generateScripts: json['generate_scripts'] as bool? ?? false,
     );

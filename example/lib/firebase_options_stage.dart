@@ -50,19 +50,19 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyBfPbK_eFTGrTYt3GaCCuzgS4GwHjK5kYY',
-    appId: '1:1022539094494:android:ed32823c3779853830a54f',
-    messagingSenderId: '1022539094494',
-    projectId: 'flavor-test-7744d',
-    storageBucket: 'flavor-test-7744d.firebasestorage.app',
+    apiKey: 'AIzaSyBJszXY2PuroJYF2bc897c4vVY9xCfYHtA',
+    appId: '1:925225900392:android:a20bbc04f73f0fe5e31edd',
+    messagingSenderId: '925225900392',
+    projectId: 'flavor-d8d1a',
+    storageBucket: 'flavor-d8d1a.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCr9nZC_w0_lAbNi07NsdUPGbw46VmXzQQ',
-    appId: '1:1022539094494:ios:5fc404718e631d0030a54f',
-    messagingSenderId: '1022539094494',
-    projectId: 'flavor-test-7744d',
-    storageBucket: 'flavor-test-7744d.firebasestorage.app',
+    apiKey: 'AIzaSyDC_MzEMeQOKwO4tLp0UTk_5NM5hUOLW8w',
+    appId: '1:925225900392:ios:da3724b95606c516e31edd',
+    messagingSenderId: '925225900392',
+    projectId: 'flavor-d8d1a',
+    storageBucket: 'flavor-d8d1a.firebasestorage.app',
     iosBundleId: 'co.flavor.com.stage',
   );
 

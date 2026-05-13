@@ -1,11 +1,13 @@
 import 'dart:io';
-import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'config_service.dart';
 import '../utils/logger.dart';
 import '../models/flavor_config.dart';
 
+/// Service for managing iOS-specific flavor configurations, including
+/// Xcode schemes, build configurations, and Info.plist updates.
 class IOSService {
+  /// Sets up Xcode schemes and build configurations for all defined flavors.
   static void setupSchemes({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
     final root = ConfigService.root;
@@ -114,36 +116,20 @@ APP_NAME=$brandedName
     if (!projectFile.existsSync()) return;
 
     final flutterDir = Directory(p.join(root, 'ios/Flutter'));
-
     if (!flutterDir.existsSync()) {
       flutterDir.createSync(recursive: true);
     }
 
-    // We write the script to a temporary file to avoid cluttering the project
-    final tempDir = Directory.systemTemp.createTempSync('flavor_cli_');
-    final scriptFile = File(p.join(tempDir.path, 'ios_flavor_setup.rb'));
-    scriptFile.writeAsStringSync(_iosAutomationScriptContent());
-
-    try {
-      final env = {
+    _runScriptInTemp(
+      log: log,
+      environment: {
         'FLAVOR_LIST': config.flavors.join(','),
         'PRODUCTION_FLAVOR': config.productionFlavor,
         'BUNDLE_ID': config.ios.bundleId,
         'USE_SUFFIX': config.useSuffix.toString(),
         'APP_NAME': config.appName,
-      };
-
-      _runRubyAutomation(
-        log: log,
-        scriptPath: scriptFile.path,
-        environment: env,
-      );
-    } finally {
-      // Cleanup temp directory
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
-    }
+      },
+    );
 
     log.info('✅ iOS project ready for automation (Zero-XCConfig mode)');
   }
@@ -703,6 +689,7 @@ end
 ''';
   }
 
+  /// Removes flavor configurations from the iOS project and restores standard state.
   static void reset({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
     _resetInfoPlist(config, log);
@@ -806,27 +793,13 @@ end
     return '$baseName-$flavor';
   }
 
+  /// Returns a display alias for [flavor].
+  /// The current config schema does not support per-flavor aliases, so this
+  /// method only applies the well-known 'staging' → 'stage' mapping and falls
+  /// back to the flavor name itself. The previous implementation incorrectly
+  /// tried to parse the YAML config file with [jsonDecode], which always threw
+  /// and was silently swallowed, making the alias lookup a dead code path.
   static String _getAliasSync(String flavor) {
-    final configPath = p.join(ConfigService.root, '.flavor_cli.json');
-    final file = File(configPath);
-    if (file.existsSync()) {
-      try {
-        final content = file.readAsStringSync();
-        final config = jsonDecode(content) as Map<String, dynamic>;
-        final flavorsList = config['flavors'] as List<dynamic>?;
-        if (flavorsList != null) {
-          for (final f in flavorsList) {
-            if (f is Map && f['name'] == flavor) {
-              final alias = f['alias'];
-              if (alias != null && alias.toString().isNotEmpty) {
-                return alias.toString();
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
     if (flavor == 'staging') return 'stage';
     return flavor;
   }
@@ -839,44 +812,39 @@ end
   }
 
   static void _runRubyAutomationWithReset(FlavorConfig config, AppLogger log) {
-    final tempDir = Directory.systemTemp.createTempSync('flavor_cli_reset_');
-    final scriptFile = File(p.join(tempDir.path, 'ios_flavor_setup.rb'));
-    scriptFile.writeAsStringSync(_iosAutomationScriptContent());
-
-    try {
-      // flavor_cli: added — pass BUNDLE_ID so reset can restore it
-      final env = {
+    _runScriptInTemp(
+      log: log,
+      args: ['--reset'],
+      environment: {
         'BUNDLE_ID': config.ios.bundleId,
         'APP_NAME': config.appName,
-      };
-      _runRubyAutomation(
-        log: log,
-        scriptPath: scriptFile.path,
-        args: ['--reset'],
-        environment: env,
-      );
-    } finally {
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
-    }
+      },
+    );
   }
 
   static void _runRubyAutomationWithDelete(AppLogger log, String flavor) {
-    final tempDir = Directory.systemTemp.createTempSync('flavor_cli_delete_');
+    _runScriptInTemp(log: log, args: ['--delete', flavor]);
+  }
+
+  /// Writes the Ruby script to a temp dir, runs it, then cleans up.
+  /// Eliminates the duplicated temp-dir scaffolding in the two callers above.
+  static void _runScriptInTemp({
+    required AppLogger log,
+    List<String> args = const [],
+    Map<String, String>? environment,
+  }) {
+    final tempDir = Directory.systemTemp.createTempSync('flavor_cli_ios_');
     final scriptFile = File(p.join(tempDir.path, 'ios_flavor_setup.rb'));
     scriptFile.writeAsStringSync(_iosAutomationScriptContent());
-
     try {
       _runRubyAutomation(
         log: log,
         scriptPath: scriptFile.path,
-        args: ['--delete', flavor],
+        args: args,
+        environment: environment,
       );
     } finally {
-      if (tempDir.existsSync()) {
-        tempDir.deleteSync(recursive: true);
-      }
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     }
   }
 

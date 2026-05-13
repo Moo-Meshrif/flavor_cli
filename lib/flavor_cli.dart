@@ -9,6 +9,7 @@ import 'commands/reset_command.dart';
 import 'commands/replace_command.dart';
 import 'commands/firebase_command.dart';
 import 'commands/migrate_command.dart';
+import 'utils/exceptions.dart';
 
 class FlavorCLI {
   Future<void> run(List<String> arguments) async {
@@ -20,41 +21,55 @@ class FlavorCLI {
     final command = arguments[0];
     final remaining = arguments.sublist(1);
 
-    switch (command) {
-      case 'init':
-        await InitCommand().execute(remaining);
-        break;
-      case 'add':
-        await AddCommand().execute(remaining);
-        break;
-      case 'delete':
-        DeleteCommand().execute(remaining);
-        break;
-      case 'replace':
-        await ReplaceCommand().execute();
-        break;
-      case 'reset':
-        ResetCommand().execute();
-        break;
-      case 'run':
-        await RunCommand().execute(remaining);
-        break;
-      case 'build':
-        await BuildCommand().execute(remaining);
-        break;
-      case 'firebase':
-        await FirebaseCommand().execute();
-        break;
-      case 'migrate':
-        await MigrateCommand().execute();
-        break;
-      case '--version':
-      case '-v':
-        await _printVersion();
-        break;
-      default:
-        print('❌ Unknown command: $command');
-        _printUsage();
+    try {
+      switch (command) {
+        case 'init':
+          await InitCommand().execute(remaining);
+          break;
+        case 'add':
+          await AddCommand().execute(remaining);
+          break;
+        case 'delete':
+          DeleteCommand().execute(remaining);
+          break;
+        case 'replace':
+          await ReplaceCommand().execute();
+          break;
+        case 'reset':
+          ResetCommand().execute();
+          break;
+        case 'run':
+          await RunCommand().execute(remaining);
+          break;
+        case 'build':
+          await BuildCommand().execute(remaining);
+          break;
+        case 'firebase':
+          await FirebaseCommand().execute();
+          break;
+        case 'migrate':
+          await MigrateCommand().execute();
+          break;
+        case '--version':
+        case '-v':
+          await _printVersion();
+          break;
+        default:
+          print('❌ Unknown command: $command');
+          _printUsage();
+      }
+    } catch (e) {
+      if (e is CliException) {
+        // Custom exceptions are already formatted for the user
+        print(e.toString());
+      } else if (e is Exception) {
+        // Generic exceptions get a red cross and the message
+        print('❌ ${e.toString().replaceFirst('Exception: ', '')}');
+      } else {
+        // Programmer errors or unexpected types should still show stack trace
+        rethrow;
+      }
+      exit(1);
     }
   }
 
@@ -71,7 +86,8 @@ class FlavorCLI {
     print('  run      Run the project with a specific flavor');
     print('  build    Build the project with a specific flavor');
     print('  firebase Setup Firebase for all flavors automatically');
-    print('  migrate  Migrate .flavor_cli.json to the latest format');
+    print('  migrate  Migrate flavor_cli.yaml to the latest format');
+
     print('');
     print('Examples:');
     print('  dart run flavor_cli init');
@@ -101,6 +117,5 @@ class FlavorCLI {
         }
       }
     } catch (_) {}
-    print('Flavor CLI v0.0.3 (fallback)');
   }
 }

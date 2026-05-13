@@ -36,7 +36,7 @@ void main() {
     ConfigService.save(config);
     await SetupRunner().run(config);
 
-    final flavorConfig = File(p.join(sandbox.path, '.flavor_cli.json'));
+    final flavorConfig = File(p.join(sandbox.path, 'flavor_cli.yaml'));
     final mainDev = File(p.join(sandbox.path, 'lib/main/main_dev.dart'));
 
     expect(flavorConfig.existsSync(), isTrue);

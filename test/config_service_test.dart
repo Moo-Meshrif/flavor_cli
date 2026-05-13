@@ -41,7 +41,6 @@ void main() {
       final loaded = ConfigService.load();
       expect(loaded.flavors, equals(['dev', 'prod']));
       expect(loaded.appName, equals('TestApp'));
-      expect(loaded.flavorValues['dev']?['baseUrl'], equals('dev.api.com'));
       expect(loaded.appConfigPath, equals('lib/config.dart'));
     });
 
@@ -67,9 +66,6 @@ void main() {
 
       final updated = ConfigService.load();
       expect(updated.flavors, containsAll(['dev', 'prod']));
-      expect(updated.flavorValues.containsKey('prod'), isTrue);
-      expect(
-          updated.flavorValues['prod']?['apiKey'], equals('')); // Default empty
     });
 
     test('removeFlavor updates config', () {
@@ -91,7 +87,6 @@ void main() {
 
       final updated = ConfigService.load();
       expect(updated.flavors, equals(['dev']));
-      expect(updated.flavorValues.containsKey('stage'), isFalse);
     });
 
     test('renameFlavor updates config and values', () {
@@ -116,8 +111,6 @@ void main() {
 
       final updated = ConfigService.load();
       expect(updated.flavors, equals(['dev', 'new']));
-      expect(updated.flavorValues.containsKey('new'), isTrue);
-      expect(updated.flavorValues['new']?['key'], equals('o'));
       expect(updated.productionFlavor, equals('new'));
     });
   });

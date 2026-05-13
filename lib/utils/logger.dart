@@ -1,6 +1,8 @@
 import 'package:mason_logger/mason_logger.dart';
 import 'validation.dart';
 
+/// A wrapper around [Logger] to provide consistent logging and user prompts
+/// across the application, with added validation (e.g., Arabic character detection).
 class AppLogger {
   final Logger _logger = Logger();
 
@@ -9,6 +11,8 @@ class AppLogger {
   void error(String message) => _logger.err(message);
   void warn(String message) => _logger.warn(message);
 
+  /// Prompts the user for input with an optional [defaultValue].
+  /// Retries if the input contains invalid characters (e.g., Arabic).
   String prompt(String message, {String? defaultValue}) {
     while (true) {
       final input = _logger.prompt(message, defaultValue: defaultValue);
@@ -21,6 +25,7 @@ class AppLogger {
     }
   }
 
+  /// Prompts the user for a Yes/No confirmation.
   bool confirm(String message, {bool defaultValue = false}) {
     final selection = _logger.chooseOne(
       message,

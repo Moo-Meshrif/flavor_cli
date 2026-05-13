@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>API_KEY</key>
-	<string>AIzaSyCr9nZC_w0_lAbNi07NsdUPGbw46VmXzQQ</string>
+	<string>AIzaSyDC_MzEMeQOKwO4tLp0UTk_5NM5hUOLW8w</string>
 	<key>GCM_SENDER_ID</key>
-	<string>1022539094494</string>
+	<string>925225900392</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>co.flavor.com</string>
 	<key>PROJECT_ID</key>
-	<string>flavor-test-7744d</string>
+	<string>flavor-d8d1a</string>
 	<key>STORAGE_BUCKET</key>
-	<string>flavor-test-7744d.firebasestorage.app</string>
+	<string>flavor-d8d1a.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:1022539094494:ios:60bdf7adc74f883030a54f</string>
+	<string>1:925225900392:ios:5a7aa1bd17f334e2e31edd</string>
 </dict>
 </plist>

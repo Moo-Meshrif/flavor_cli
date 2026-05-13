@@ -2,17 +2,17 @@ import '../services/config_service.dart';
 import '../utils/logger.dart';
 import '../utils/validation.dart';
 import '../runner/setup_runner.dart';
+import '../utils/exceptions.dart';
 
+/// Command to add a new flavor to the project.
 class AddCommand {
   final _log = AppLogger();
 
+  /// Prompts the user for a flavor name if not provided in [args],
+  /// validates it, and sets up the project structure for the new flavor.
   Future<void> execute(List<String> args) async {
     if (!ConfigService.isValidProject(_log)) return;
-
-    if (!ConfigService.isInitialized()) {
-      _log.error('❌ Error: Project not initialized. Run "init" first.');
-      return;
-    }
+    if (!ConfigService.requiresInitialized(_log)) return;
 
     String newFlavor;
     if (args.isEmpty) {
@@ -47,10 +47,12 @@ class AddCommand {
       ConfigService.addFlavor(newFlavor);
 
       // 2. Delegate all file structure and platform injections to SetupRunner natively
-      await SetupRunner(logger: _log).run(ConfigService.load(), newFlavor: newFlavor);
+      await SetupRunner(logger: _log)
+          .run(ConfigService.load(), newFlavor: newFlavor);
 
       _log.success('✅ Flavor "$newFlavor" added successfully!');
     } catch (e) {
+      if (e is CliException && e.isLogged) return;
       _log.error('❌ Failed to add flavor: $e');
     }
   }

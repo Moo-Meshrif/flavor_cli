@@ -38,9 +38,11 @@ class ConfigValidator {
     if (json.containsKey('flavors') && flavorsList.isEmpty) {
       addError('flavors', 'cannot be empty.');
     }
-    
+
     final prodFlavor = json['production_flavor'] as String?;
-    if (prodFlavor != null && flavorsList.isNotEmpty && !flavorsList.contains(prodFlavor)) {
+    if (prodFlavor != null &&
+        flavorsList.isNotEmpty &&
+        !flavorsList.contains(prodFlavor)) {
       addError('production_flavor', 'must be one of the declared flavors.');
     }
 
@@ -52,7 +54,8 @@ class ConfigValidator {
       final useSuffix = json['use_suffix'] as bool? ?? true;
 
       if (strategy == null) {
-        addError('firebase.strategy', 'is required when firebase config is present.');
+        addError('firebase.strategy',
+            'is required when firebase config is present.');
       } else {
         const validStrategies = [
           'shared_id_single_project',
@@ -64,17 +67,15 @@ class ConfigValidator {
           addError('firebase.strategy',
               'must be one of: ${validStrategies.join(', ')}.');
         } else {
-          // 1. Basic use_suffix consistency
           if (strategy == 'shared_id_single_project' && useSuffix == true) {
             addError('firebase.strategy',
                 'shared_id_single_project requires use_suffix: false.');
           }
           if (strategy.startsWith('unique_id_') && useSuffix == false) {
-            addError('firebase.strategy',
-                '$strategy requires use_suffix: true.');
+            addError(
+                'firebase.strategy', '$strategy requires use_suffix: true.');
           }
 
-          // 2. Projects shape validation
           final projectKeys = projects.keys.toSet();
           if (strategy == 'shared_id_single_project' ||
               strategy == 'unique_id_single_project') {
@@ -95,32 +96,11 @@ class ConfigValidator {
       }
     }
 
-    // Values Validation
-    final fields = Map<String, String>.from(json['fields'] as Map? ?? {});
-    final values = Map<String, dynamic>.from(json['values'] as Map? ?? {});
-    final flavors = (json['flavors'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-
-    for (final flavor in flavors) {
-      if (!values.containsKey(flavor)) {
-        addError('values', 'is missing flavor "$flavor" (declared in flavors).');
-      } else {
-        final flavorValues = Map<String, dynamic>.from(values[flavor] as Map? ?? {});
-        for (final field in fields.keys) {
-          if (!flavorValues.containsKey(field)) {
-            addError('values.$flavor', 'is missing key "$field" (defined in fields).');
-          }
-        }
-      }
-    }
-    for (final valFlavor in values.keys) {
-      if (!flavors.contains(valFlavor)) {
-         addError('values.$valFlavor', 'flavor is not declared in the root flavors list.');
-      }
-    }
+    // Values are managed exclusively via .env files, so no validation needed here.
 
     if (errors.isNotEmpty) {
       final errorMsg = StringBuffer();
-      errorMsg.writeln('❌ flavor_cli: invalid config at ".flavor_cli.json"');
+      errorMsg.writeln('❌ flavor_cli: invalid config at "flavor_cli.yaml"');
       for (var e in errors) {
         errorMsg.writeln(e);
       }

@@ -1,90 +1,61 @@
 import 'dart:io';
 import '../services/config_service.dart';
+import '../services/runtime_config_service.dart';
 import '../utils/logger.dart';
 
+/// Command to build the Flutter application for a specific platform and flavor.
 class BuildCommand {
   final _log = AppLogger();
 
+  /// Prompts for build target and flavor if not provided, validates environment,
+  /// and builds the application using the Flutter CLI.
   Future<void> execute(List<String> args) async {
     if (!ConfigService.isValidProject(_log)) return;
-
-    if (!ConfigService.isInitialized()) {
-      _log.error('❌ Error: Project not initialized. Run "init" first.');
-      return;
-    }
+    if (!ConfigService.requiresInitialized(_log)) return;
 
     final config = ConfigService.load();
     final flavors = config.flavors;
 
     // 1. Resolve Target Type
-    String? targetType;
     const validTargets = ['apk', 'appbundle', 'ios', 'ipa'];
-    for (final arg in args) {
-      if (validTargets.contains(arg.toLowerCase())) {
-        targetType = arg.toLowerCase();
-        break;
-      }
-    }
+    String? targetType = args
+        .where((a) => validTargets.contains(a.toLowerCase()))
+        .map((a) => a.toLowerCase())
+        .firstOrNull;
 
-    if (targetType == null) {
-      targetType = _log.chooseOne('👉 Select build target:',
-          choices: validTargets);
-    }
+    targetType ??=
+        _log.chooseOne('👉 Select build target:', choices: validTargets);
 
     // 2. Resolve Flavor
-    String? flavor;
-    for (final arg in args) {
-      if (flavors.contains(arg.toLowerCase())) {
-        flavor = arg.toLowerCase();
-        break;
-      }
-    }
+    String? flavor = args
+        .where((a) => flavors.contains(a.toLowerCase()))
+        .map((a) => a.toLowerCase())
+        .firstOrNull;
 
     if (flavor == null) {
       flavor = _log.chooseOne('👉 Select a flavor to build:', choices: flavors);
-    } else {
-       // Validate explicitly if it was passed
-       if (!flavors.contains(flavor)) {
-         _log.error('❌ flavor_cli: unknown flavor "$flavor"');
-         _log.info('   → available flavors: [${flavors.join(", ")}]');
-         return;
-       }
-    }
-
-    final separate = config.useSeparateMains;
-    final targetPath =
-        separate ? 'lib/main/main_$flavor.dart' : 'lib/main.dart';
-
-    if (!File(targetPath).existsSync()) {
-      _log.error('❌ Error: Entry point not found: $targetPath');
+    } else if (!flavors.contains(flavor)) {
+      _log.error('❌ flavor_cli: unknown flavor "$flavor"');
+      _log.info('   → available flavors: [${flavors.join(", ")}]');
       return;
     }
+
+    // 3. Validate ENV file and entry point
+    final service = RuntimeConfigService();
+    if (!service.validateFlavorReadyToRun(config, flavor, _log)) return;
 
     _log.info('🏗️ Building $targetType for flavor: $flavor...');
 
     final processArgs = [
       'build',
       targetType,
-      '--flavor',
-      flavor,
-      '-t',
-      targetPath,
       '--release',
-      '--dart-define=FLAVOR=$flavor',
+      ...service.buildRunArgs(config, flavor),
     ];
 
-    // Add custom fields
-    final values = config.flavorValues[flavor] ?? {};
-    for (final entry in values.entries) {
-      final value = entry.value;
-      if (value is! String || value.isNotEmpty) {
-        processArgs.add('--dart-define=${entry.key}=$value');
-      }
-    }
-
     final process = await Process.start(
-      'flutter', 
-      processArgs, 
+      'flutter',
+      processArgs,
       mode: ProcessStartMode.inheritStdio,
       runInShell: true,
     );

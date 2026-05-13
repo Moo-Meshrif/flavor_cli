@@ -4,34 +4,32 @@ import 'config_service.dart';
 import '../utils/logger.dart';
 import '../models/flavor_config.dart';
 
+/// Service for managing Android-specific flavor configurations.
 class AndroidService {
+  /// Sets up product flavors in build.gradle (Groovy or KTS) and updates AndroidManifest.
   static void setupFlavors({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
     final flavors = config.flavors;
-    final fields = config.fields;
 
     // Check Groovy
     final groovyFile =
         File(p.join(ConfigService.root, 'android/app/build.gradle'));
     if (groovyFile.existsSync()) {
-      _setupGroovy(groovyFile, config, flavors, fields, log);
+      _setupBuildFile(groovyFile, config, flavors, log, isKts: false);
     }
 
     // Check Kotlin DSL
     final ktsFile =
         File(p.join(ConfigService.root, 'android/app/build.gradle.kts'));
     if (ktsFile.existsSync()) {
-      _setupKTS(ktsFile, config, flavors, fields, log);
+      _setupBuildFile(ktsFile, config, flavors, log, isKts: true);
     }
 
     _updateManifest(log);
     _handlePackageMigration(config, log);
   }
 
-  static void addFlavor(String flavor, {required FlavorConfig config, AppLogger? logger}) {
-    setupFlavors(config: config, logger: logger);
-  }
-
+  /// Removes flavor configurations from Android build files and manifest.
   static void reset({required FlavorConfig config, AppLogger? logger}) {
     final log = logger ?? AppLogger();
     final groovyFile =
@@ -68,8 +66,7 @@ class AndroidService {
     file.writeAsStringSync(content);
   }
 
-  static void _resetManifest(config) {
-    
+  static void _resetManifest(FlavorConfig config) {
     final manifestPath =
         p.join(ConfigService.root, 'android/app/src/main/AndroidManifest.xml');
     final file = File(manifestPath);
@@ -130,24 +127,30 @@ class AndroidService {
     }
   }
 
-  static void _setupGroovy(File file, FlavorConfig config, List<String> flavors, Map<String, String> fields, AppLogger log) {
+  static void _setupBuildFile(
+      File file, FlavorConfig config, List<String> flavors, AppLogger log,
+      {required bool isKts}) {
     var content = file.readAsStringSync();
 
     // 1. Ensure flavorDimensions
     if (!content.contains('flavorDimensions')) {
-      content = content.replaceFirst(
-          RegExp(r'android\s*\{'), 'android {\n    flavorDimensions "default"');
+      final dimensionLine = isKts
+          ? 'android {\n    flavorDimensions += "default"'
+          : 'android {\n    flavorDimensions "default"';
+      content = content.replaceFirst(RegExp(r'android\s*\{'), dimensionLine);
     }
 
-    // 2. Update applicationId if configured
-    
-    final appId = config.android.applicationId as String?;
-    if (appId != null) {
+    // 2. Update applicationId and namespace if configured
+    final appId = config.android.applicationId;
+    if (appId.isNotEmpty) {
       final appIdRegex = RegExp(r'applicationId\s*=\s*".*?"');
       if (appIdRegex.hasMatch(content)) {
         content = content.replaceFirst(appIdRegex, 'applicationId = "$appId"');
       }
-      final namespaceRegex = RegExp(r'namespace\s*(=|\s)\s*".*?"');
+      // Groovy allows optional `=`; KTS requires it — match both
+      final namespaceRegex = isKts
+          ? RegExp(r'namespace\s*=\s*".*?"')
+          : RegExp(r'namespace\s*(=|\s)\s*".*?"');
       if (namespaceRegex.hasMatch(content)) {
         content = content.replaceFirst(namespaceRegex, 'namespace = "$appId"');
       }
@@ -162,11 +165,20 @@ class AndroidService {
 
     for (final flavor in flavors) {
       final name = _getFlavoredName(baseAppName, flavor, config);
-      buffer.writeln('        $flavor {');
-      buffer.writeln('            dimension "default"');
-      buffer.writeln('            resValue "string", "app_name", "$name"');
-      if (useSuffix && flavor != prodFlavor) {
-        buffer.writeln('            applicationIdSuffix ".$flavor"');
+      if (isKts) {
+        buffer.writeln('        create("$flavor") {');
+        buffer.writeln('            dimension = "default"');
+        buffer.writeln('            resValue("string", "app_name", "$name")');
+        if (useSuffix && flavor != prodFlavor) {
+          buffer.writeln('            applicationIdSuffix = ".$flavor"');
+        }
+      } else {
+        buffer.writeln('        $flavor {');
+        buffer.writeln('            dimension "default"');
+        buffer.writeln('            resValue "string", "app_name", "$name"');
+        if (useSuffix && flavor != prodFlavor) {
+          buffer.writeln('            applicationIdSuffix ".$flavor"');
+        }
       }
       buffer.writeln('        }');
     }
@@ -174,54 +186,7 @@ class AndroidService {
 
     content = _replaceOrAddBlock(content, 'productFlavors', buffer.toString());
     file.writeAsStringSync(content);
-    log.info('✔ Android flavors completed');
-  }
-
-  static void _setupKTS(File file, FlavorConfig config, List<String> flavors, Map<String, String> fields, AppLogger log) {
-    var content = file.readAsStringSync();
-
-    // 1. Ensure flavorDimensions
-    if (!content.contains('flavorDimensions')) {
-      content = content.replaceFirst(RegExp(r'android\s*\{'),
-          'android {\n    flavorDimensions += "default"');
-    }
-
-    // 2. Update applicationId if configured
-    
-    final appId = config.android.applicationId as String?;
-    if (appId != null) {
-      final appIdRegex = RegExp(r'applicationId\s*=\s*".*?"');
-      if (appIdRegex.hasMatch(content)) {
-        content = content.replaceFirst(appIdRegex, 'applicationId = "$appId"');
-      }
-      final namespaceRegex = RegExp(r'namespace\s*=\s*".*?"');
-      if (namespaceRegex.hasMatch(content)) {
-        content = content.replaceFirst(namespaceRegex, 'namespace = "$appId"');
-      }
-    }
-
-    // 3. Generate productFlavors block
-    final buffer = StringBuffer();
-    buffer.writeln('    productFlavors {');
-    final baseAppName = config.appName;
-    final prodFlavor = config.productionFlavor;
-    final useSuffix = config.useSuffix;
-
-    for (final flavor in flavors) {
-      final name = _getFlavoredName(baseAppName, flavor, config);
-      buffer.writeln('        create("$flavor") {');
-      buffer.writeln('            dimension = "default"');
-      buffer.writeln('            resValue("string", "app_name", "$name")');
-      if (useSuffix && flavor != prodFlavor) {
-        buffer.writeln('            applicationIdSuffix = ".$flavor"');
-      }
-      buffer.writeln('        }');
-    }
-    buffer.writeln('    }');
-
-    content = _replaceOrAddBlock(content, 'productFlavors', buffer.toString());
-    file.writeAsStringSync(content);
-    log.info('✔ Android flavors (KTS) completed');
+    log.info('✔ Android flavors${isKts ? " (KTS)" : ""} completed');
   }
 
   static String _replaceOrAddBlock(
@@ -319,7 +284,8 @@ class AndroidService {
     return -1;
   }
 
-  static String _getFlavoredName(String baseName, String flavor, FlavorConfig config) {
+  static String _getFlavoredName(
+      String baseName, String flavor, FlavorConfig config) {
     final productionFlavor = config.productionFlavor;
     if (flavor == productionFlavor) {
       return baseName;
@@ -328,7 +294,6 @@ class AndroidService {
   }
 
   static void _handlePackageMigration(FlavorConfig config, AppLogger log) {
-    
     final targetAppId = config.android.applicationId as String?;
     if (targetAppId == null) return;
 

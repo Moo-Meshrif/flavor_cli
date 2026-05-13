@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.8
+
+*   **ENV-Only Architecture**: Fully transitioned from JSON-based runtime configuration to a strictly ENV-based model using `flutter_dotenv`.
+*   **Configuration Modernization**: Migration from `.flavor_cli.json` to `flavor_cli.yaml` for better readability and industry standards.
+*   **Automatic Dependency Injection**: The CLI now automatically manages the `flutter_dotenv` dependency, asset registration, and `.gitignore` entries.
+*   **Enhanced Migration Command**: Completely revamped `migrate` command to handle legacy JSON to YAML conversion and runtime value migration to `.env` files.
+*   **Clean Source of Truth**: Dynamic runtime values are now isolated in protected `.env` files, keeping `flavor_cli.yaml` focused on static project metadata.
+
 ## 0.0.7
 
 *   **Main File Preservation**: Automatically preserves existing `main.dart` content when migrating to the "Separate Main Files" strategy by moving it to the production flavor entry point.

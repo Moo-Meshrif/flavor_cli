@@ -1,17 +1,17 @@
 import 'dart:io';
 import '../services/config_service.dart';
+import '../services/runtime_config_service.dart';
 import '../utils/logger.dart';
 
+/// Command to run the Flutter application with a specific flavor.
 class RunCommand {
   final _log = AppLogger();
 
+  /// Prompts for flavor and build mode if not provided, validates environment,
+  /// and runs the application using the Flutter CLI.
   Future<void> execute(List<String> args) async {
     if (!ConfigService.isValidProject(_log)) return;
-
-    if (!ConfigService.isInitialized()) {
-      _log.error('❌ Error: Project not initialized. Run "init" first.');
-      return;
-    }
+    if (!ConfigService.requiresInitialized(_log)) return;
 
     final config = ConfigService.load();
     final flavors = config.flavors;
@@ -26,56 +26,28 @@ class RunCommand {
       }
     }
 
-    if (flavor == null) {
-      flavor = _log.chooseOne('👉 Select a flavor to run:', choices: flavors);
-    }
+    flavor ??= _log.chooseOne('👉 Select a flavor to run:', choices: flavors);
 
     // Try to find build mode in args, otherwise prompt
-    String? mode;
-    for (final arg in args) {
-      final clean = arg.replaceAll('--', '').toLowerCase();
-      if (['debug', 'release', 'profile'].contains(clean)) {
-        mode = clean;
-        break;
-      }
-    }
-    
+    String? mode = args
+        .map((a) => a.replaceAll('--', '').toLowerCase())
+        .where((a) => ['debug', 'release', 'profile'].contains(a))
+        .firstOrNull;
+
     mode ??= _log.chooseOne('👉 Select build mode:',
         choices: ['debug', 'release', 'profile']);
 
-    final separate = config.useSeparateMains;
-    final target = separate ? 'lib/main/main_$flavor.dart' : 'lib/main.dart';
-
-    if (!File(target).existsSync()) {
-      _log.error('❌ Error: Entry point not found: $target');
-      return;
-    }
+    // Validate ENV file and entry point
+    final service = RuntimeConfigService();
+    if (!service.validateFlavorReadyToRun(config, flavor, _log)) return;
 
     _log.info('🚀 Running $flavor ($mode)...');
 
-    // Build arguments
-    final runArgs = [
-      'run',
-      '--flavor',
-      flavor,
-      '-t',
-      target,
-      '--$mode',
-      '--dart-define=FLAVOR=$flavor',
-    ];
-
-    // Add custom fields as dart-defines
-    final values = config.flavorValues[flavor] ?? {};
-    for (final entry in values.entries) {
-      final value = entry.value;
-      if (value is! String || value.isNotEmpty) {
-        runArgs.add('--dart-define=${entry.key}=$value');
-      }
-    }
+    final runArgs = ['run', '--$mode', ...service.buildRunArgs(config, flavor)];
 
     final process = await Process.start(
-      'flutter', 
-      runArgs, 
+      'flutter',
+      runArgs,
       mode: ProcessStartMode.inheritStdio,
       runInShell: true,
     );

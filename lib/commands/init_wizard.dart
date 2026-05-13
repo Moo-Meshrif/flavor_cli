@@ -6,6 +6,7 @@ import '../runner/setup_runner.dart';
 import '../services/config_service.dart';
 import '../utils/logger.dart';
 import '../utils/validation.dart';
+import '../commands/firebase_command.dart';
 import '../utils/type_utils.dart';
 
 class InitWizard {
@@ -68,7 +69,7 @@ class InitWizard {
       _log.info('Please try again.');
     }
 
-    // 2. Choose fields
+    // 3. Choose fields
     final fields = <String, String>{};
     while (true) {
       final fieldInput = _log.prompt(
@@ -111,7 +112,7 @@ class InitWizard {
       _log.info('Please try again.');
     }
 
-    // 3. Choose AppConfig path
+    // 4. Choose AppConfig path
     var appConfigPath = _log.prompt(
       '👉 Where should AppConfig be created ?',
       defaultValue: 'lib/core/config/app_config.dart',
@@ -125,7 +126,7 @@ class InitWizard {
       appConfigPath = p.join(appConfigPath, 'app_config.dart');
     }
 
-    // 4. Choose Main strategy
+    // 5. Choose Main strategy
     final strategy = _log.chooseOne(
       '👉 Which main strategy do you prefer ?',
       choices: [
@@ -135,14 +136,14 @@ class InitWizard {
     );
     final useSeparateMains = strategy.startsWith('Separate');
 
-    // 5. App Name
+    // 6. App Name
     final detectedName = _detectAppName();
     final appName = _log.prompt(
       '👉 What is your App Name?',
       defaultValue: detectedName,
     );
 
-    // 6. Identify Production Flavor
+    // 7. Identify Production Flavor
     String productionFlavor;
     if (flavors.contains('prod')) {
       productionFlavor = 'prod';
@@ -155,14 +156,14 @@ class InitWizard {
       );
     }
 
-    // 7. Base Package ID
+    // 8. Base Package ID
     final detectedId = _detectPackageId();
     final packageId = _log.prompt(
       '👉 What is your Production Package ID? (Your unique App ID, e.g., com.example.app)',
       defaultValue: detectedId,
     );
 
-    // 8. ID strategy
+    // 9. ID strategy
     final idStrategy = _log.chooseOne(
       '👉 Which package ID strategy do you prefer?',
       choices: [
@@ -172,7 +173,7 @@ class InitWizard {
     );
     final useSuffix = idStrategy.startsWith('Unique');
 
-    // 9. Firebase
+    // 10. Firebase
     FirebaseConfig? firebaseConfig;
     bool enableFirebase = ConfigService.hasFirebase();
     if (enableFirebase) {
@@ -183,47 +184,24 @@ class InitWizard {
     }
 
     if (enableFirebase) {
-      final List<String> strategyChoices;
-      if (useSuffix) {
-        strategyChoices = [
-          'unique_id_multi_project',
-          'unique_id_single_project',
-        ];
-      } else {
-        strategyChoices = [
-          'shared_id_single_project',
-        ];
-      }
-
-      final strategy = strategyChoices.length > 1
-          ? _log.chooseOne('👉 Which Firebase strategy do you prefer?',
-              choices: strategyChoices)
-          : strategyChoices.first;
-
-      if (strategyChoices.length == 1) {
-        _log.info(
-            'ℹ️ Using Firebase strategy: $strategy (matches your "Shared ID" strategy)');
-      }
-
-      final projects = <String, String>{};
-      if (strategy == 'unique_id_multi_project') {
-        for (final flavor in flavors) {
-          final projectId =
-              _log.prompt('👉 Enter Firebase Project ID for flavor "$flavor":');
-          projects[flavor] = projectId;
-        }
-      } else {
-        final projectId = _log.prompt('👉 Enter your Firebase Project ID:');
-        projects['all'] = projectId;
-      }
-
-      firebaseConfig = FirebaseConfig(
-        strategy: strategy,
-        projects: projects,
+      // Delegate to FirebaseCommand to avoid duplicating the strategy/project-ID prompt logic
+      final tempConfig = FlavorConfig(
+        flavors: flavors,
+        appName: '',
+        fields: const {},
+        flavorValues: const {},
+        appConfigPath: '',
+        useSeparateMains: false,
+        useSuffix: useSuffix,
+        android: AndroidConfig(applicationId: ''),
+        ios: IosConfig(bundleId: ''),
+        productionFlavor: '',
       );
+      firebaseConfig =
+          FirebaseCommand.promptForFirebaseConfig(_log, tempConfig);
     }
 
-    // 10. Per-flavor field values
+    // 11. Per-flavor field values
     final flavorValues = <String, Map<String, dynamic>>{};
     _log.info('\n📝 Now let\'s set the values for your variables per flavor:');
 
@@ -256,9 +234,7 @@ class InitWizard {
       productionFlavor: productionFlavor,
       firebase: firebaseConfig,
       generateScripts: false,
-    );
-
-    // Call SetupRunner
+    ); // Call SetupRunner
     await SetupRunner(logger: _log).run(config);
   }
 

@@ -10,12 +10,14 @@
 
 ### 🛡️ Resilient & Type-Safe
 
-- **Zero-Guess Configuration**: Auto-generates a type-safe `AppConfig` class with typed variables (`String`, `bool`, `int`, `double`), with per-flavor values defined at init time.
+- **Zero-Guess Configuration**: Auto-generates a type-safe `AppConfig` class with typed variables (`String`, `bool`, `int`, `double`).
+- **ENV-Driven Runtime**: Securely stores per-flavor values in `.env.<flavor>` files, loaded at runtime via `flutter_dotenv`.
 - **Project Safety**: Interactive `delete` and `replace` commands ensure your project remains buildable. `replace` uses a pre-flight snapshot for atomic, rollback-capable renames. Revert instantly with a **`reset`** command.
-- **Strict Validation**: Every command validates `.flavor_cli.json` on load — missing fields, invalid Firebase strategies, and mismatched flavor values all fail fast with clear, actionable error messages.
+- **Automatic Formatting**: Integrated `dart format` ensures all generated and modified files match your project's styling.
 
 ### 📦 Flexible Architecture
 
+- **YAML Configuration**: Uses `flavor_cli.yaml` for clear, readable project metadata.
 - **Automatic Isolation**: Automatically configures unique internal suffixes (e.g., `.dev`, `.beta`) to allow parallel app installations on the same device.
 - **Smart Patterns**: Seamlessly supports both the professional **"Separate Mains"** pattern and the classic **"Single Main"** approach.
 - **IDE Integration**: Automatically generates and maintains VS Code `launch.json` configurations for each flavor, allowing you to run any environment directly from your IDE.
@@ -44,10 +46,10 @@ dart run flavor_cli init
 
 #### Option B — Non-interactive
 
-Commit a `.flavor_cli.json` to your repo and bootstrap with:
+Commit a `flavor_cli.yaml` to your repo and bootstrap with:
 
 ```bash
-dart run flavor_cli init --from .flavor_cli.json
+dart run flavor_cli init --from flavor_cli.yaml
 ```
 
 All required fields are validated before any files are touched. See [Config Reference](#-config-reference) for the full schema.
@@ -66,11 +68,11 @@ Commands:
   run      Run the project with a specific flavor
   build    Build the project with a specific flavor
   firebase Setup Firebase for all flavors automatically
-  migrate  Migrate .flavor_cli.json to the latest format
+  migrate  Migrate legacy JSON config to the latest YAML/ENV format
 
 Examples:
   dart run flavor_cli init
-  dart run flavor_cli init --from .flavor_cli.json
+  dart run flavor_cli init --from flavor_cli.yaml
   dart run flavor_cli add staging
   dart run flavor_cli replace
   dart run flavor_cli reset
@@ -103,18 +105,18 @@ The wizard guides you through 9 steps:
 8. **Firebase Project ID**: Set your Firebase project ID if you enable Firebase.
 9. **Per-Flavor Values**: Set the runtime value for each `AppConfig` variable across every flavor (e.g., `baseUrl` for `dev`, `stage`, `prod`).
 
-On completion, `.flavor_cli.json` is written to your project root (silently overwrites if it exists).
+On completion, `flavor_cli.yaml` is written to your project root (silently overwrites if it exists) and `.env.<flavor>` files are generated.
 
 **Option B — `--from <path>`**
 
 ```bash
-dart run flavor_cli init --from .flavor_cli.json
+dart run flavor_cli init --from flavor_cli.yaml
 ```
 
 Reads and strictly validates the config file, then runs the full setup non-interactively. Any missing required field fails immediately with a clear error:
 
 ```
-❌ flavor_cli: invalid config at ".flavor_cli.json"
+❌ flavor_cli: invalid config at "flavor_cli.yaml"
    → "production_flavor" must be one of the declared flavors: [dev, stage, prod]
 ```
 
@@ -128,7 +130,7 @@ Reads and strictly validates the config file, then runs the full setup non-inter
 Add a new environment to an existing setup without re-initializing.
 
 - Prompts for the flavor name if not provided as an argument.
-- Initializes empty per-flavor values for all defined `AppConfig` fields (fill them in `.flavor_cli.json` after).
+- Initializes empty per-flavor values in new `.env.<flavor>` files.
 - Regenerates `.xcconfig` files, updates Android flavors, and adds the flavor to your `AppConfig`.
 
 ```bash
@@ -162,7 +164,7 @@ Reverts your project to its original, non-flavored state.
 
 - Removes all flavor mains, xcconfig files, generated scripts, and VS Code launch configs.
 - Reverts `build.gradle` / `build.gradle.kts` and Xcode project settings.
-- Deletes `.flavor_cli.json`.
+- Deletes `flavor_cli.yaml` and all `.env.*` files.
 
 ---
 
@@ -172,7 +174,7 @@ Standardized wrapper for `flutter run`.
 
 - Prompts for flavor and build mode (`debug` / `release` / `profile`) if not provided.
 - Resolves the correct entry point based on your main strategy (`lib/main/main_<flavor>.dart` or `lib/main.dart`).
-- Passes `--flavor`, `--target`, `--dart-define=FLAVOR=<flavor>`, and all per-flavor `AppConfig` field values as `--dart-define` entries automatically.
+- Automatically loads the correct `.env.<flavor>` file at startup.
 - Fails with a clear error if the resolved entry point file does not exist.
 
 ```bash
@@ -198,7 +200,7 @@ dart run flavor_cli build apk prod
 
 **The "One-Pass" Firebase orchestrator.**
 
-Reads the `firebase` block from `.flavor_cli.json` and configures Firebase non-interactively across all flavors. Requires `flutterfire` CLI to be available on PATH.
+Reads the `firebase` block from `flavor_cli.yaml` and configures Firebase non-interactively across all flavors. Requires `flutterfire` CLI to be available on PATH.
 
 Supports 3 strategies:
 
@@ -221,14 +223,15 @@ dart run flavor_cli firebase
 
 ### `9. migrate`
 
-**Migrate your configuration to the latest version.**
+**Migrate your configuration to the latest ENV format.**
 
-If you are upgrading from an older version of `flavor_cli`, your `.flavor_cli.json` might be missing the required `values` section. The `migrate` command detects these omissions and guides you through filling them in.
+If you are upgrading from an older version of `flavor_cli` (v0.0.7 or below), you should migrate your legacy `.flavor_cli.json` to the new `flavor_cli.yaml` + `.env` architecture.
 
-- Reads your existing `.flavor_cli.json` (even if it's currently invalid).
-- Prompts for missing per-flavor values for any defined `fields`.
-- Updates the configuration file while preserving your existing settings.
-- **Note**: This only updates the JSON file. Run `init` after migration to apply any changes to your source code.
+- Reads your existing `.flavor_cli.json`.
+- Extracts `values` and migrates them to per-flavor `.env` files.
+- Generates a clean `flavor_cli.yaml`.
+- Updates your `AppConfig` and `main` entry points to use `flutter_dotenv`.
+- Deletes the legacy `.flavor_cli.json` on success.
 
 ```bash
 dart run flavor_cli migrate
@@ -238,40 +241,40 @@ dart run flavor_cli migrate
 
 ## 📐 Config Reference
 
-`.flavor_cli.json` is the source of truth for all commands after `init`.
+`flavor_cli.yaml` is the source of truth for project metadata. Per-flavor runtime values are stored in `.env.<flavor>` files.
 
-```json
-{
-  "flavors": ["dev", "stage", "prod"],
-  "app_name": "MyApp",
-  "fields": {
-    "baseUrl": "String",
-    "debug": "bool"
-  },
-  "values": {
-    "dev":   { "baseUrl": "https://dev.api.com",  "debug": "true" },
-    "stage": { "baseUrl": "https://stage.api.com","debug": "true" },
-    "prod":  { "baseUrl": "https://api.com",      "debug": "false" }
-  },
-  "app_config_path": "lib/core/config/app_config.dart",
-  "use_separate_mains": true,
-  "use_suffix": true,
-  "android": {
-    "application_id": "com.example.app"
-  },
-  "ios": {
-    "bundle_id": "com.example.app"
-  },
-  "production_flavor": "prod",
-  "firebase": {
-    "strategy": "unique_id_multi_project",
-    "projects": {
-      "dev":   "my-app-dev",
-      "stage": "my-app-stage",
-      "prod":  "my-app-prod"
-    }
-  }
-}
+**flavor_cli.yaml**
+
+```yaml
+flavors:
+  - dev
+  - stage
+  - prod
+app_name: MyApp
+fields:
+  baseUrl: String
+  debug: bool
+app_config_path: lib/core/config/app_config.dart
+use_separate_mains: true
+use_suffix: true
+android:
+  application_id: com.example.app
+ios:
+  bundle_id: com.example.app
+production_flavor: prod
+firebase:
+  strategy: unique_id_multi_project
+  projects:
+    dev: my-app-dev
+    stage: my-app-stage
+    prod: my-app-prod
+```
+
+**.env.dev**
+
+```properties
+BASE_URL=https://dev.api.com
+DEBUG=true
 ```
 
 ### Required fields

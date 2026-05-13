@@ -2,6 +2,7 @@ import '../services/config_service.dart';
 import '../runner/setup_runner.dart';
 import '../utils/logger.dart';
 import '../utils/validation.dart';
+import '../utils/exceptions.dart';
 
 class ReplaceCommand {
   final AppLogger _log;
@@ -10,13 +11,10 @@ class ReplaceCommand {
 
   Future<void> execute() async {
     if (!ConfigService.isValidProject(_log)) return;
+    if (!ConfigService.requiresInitialized(_log)) return;
 
-    if (!ConfigService.isInitialized()) {
-      _log.error('❌ Error: Project not initialized. Run "init" first.');
-      return;
-    }
-
-    final flavors = ConfigService.load().flavors;
+    final config = ConfigService.load();
+    final flavors = config.flavors;
     if (flavors.isEmpty) {
       _log.error('❌ No flavors found to replace. Run "init" first.');
       return;
@@ -27,8 +25,9 @@ class ReplaceCommand {
       choices: flavors,
     );
 
-    if (oldFlavor == ConfigService.load().productionFlavor) {
-      _log.warn('⚠️ You are about to replace the production flavor ("$oldFlavor").');
+    if (oldFlavor == config.productionFlavor) {
+      _log.warn(
+          '⚠️ You are about to replace the production flavor ("$oldFlavor").');
       final confirm = _log.confirm('Are you sure you want to continue?');
       if (!confirm) {
         _log.info('Operation cancelled.');
@@ -38,7 +37,10 @@ class ReplaceCommand {
 
     String newFlavor;
     while (true) {
-      newFlavor = _log.prompt('👉 Enter the new name for "$oldFlavor":').trim().toLowerCase();
+      newFlavor = _log
+          .prompt('👉 Enter the new name for "$oldFlavor":')
+          .trim()
+          .toLowerCase();
 
       if (newFlavor.isEmpty) {
         _log.error('❌ New flavor name cannot be empty.');
@@ -46,7 +48,8 @@ class ReplaceCommand {
       }
 
       if (!ValidationUtils.isValidIdentifier(newFlavor)) {
-        _log.error('❌ Invalid flavor name: "$newFlavor". Must be a valid Dart identifier.');
+        _log.error(
+            '❌ Invalid flavor name: "$newFlavor". Must be a valid Dart identifier.');
         continue;
       }
 
@@ -58,14 +61,16 @@ class ReplaceCommand {
       break;
     }
 
-    _log.info('🔄 Orchestrating rename of "$oldFlavor" to "$newFlavor" (Tx)...');
+    _log.info(
+        '🔄 Orchestrating rename of "$oldFlavor" to "$newFlavor" (Tx)...');
 
     try {
-       await SetupRunner(logger: _log).replaceFlavor(
-         oldFlavor: oldFlavor,
-         newFlavor: newFlavor,
-       );
+      await SetupRunner(logger: _log).replaceFlavor(
+        oldFlavor: oldFlavor,
+        newFlavor: newFlavor,
+      );
     } catch (e) {
+      if (e is CliException && e.isLogged) return;
       _log.error('❌ Failed to replace flavor: $e');
     }
   }

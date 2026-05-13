@@ -2,19 +2,17 @@ import '../services/config_service.dart';
 import '../runner/setup_runner.dart';
 import '../utils/logger.dart';
 import '../utils/validation.dart';
+import '../utils/exceptions.dart';
 
 class DeleteCommand {
   final _log = AppLogger();
 
   Future<void> execute(List<String> args) async {
     if (!ConfigService.isValidProject(_log)) return;
+    if (!ConfigService.requiresInitialized(_log)) return;
 
-    if (!ConfigService.isInitialized()) {
-      _log.error('❌ Error: Project not initialized. Run "init" first.');
-      return;
-    }
-
-    final flavors = ConfigService.load().flavors;
+    final config = ConfigService.load();
+    final flavors = config.flavors;
     if (flavors.isEmpty) {
       _log.error('❌ Error: No flavors found in configuration to delete.');
       return;
@@ -28,7 +26,8 @@ class DeleteCommand {
       flavorToDelete = args[0].toLowerCase().trim();
 
       if (!ValidationUtils.isValidIdentifier(flavorToDelete)) {
-        _log.error('❌ Error: "$flavorToDelete" is not a valid Dart identifier.');
+        _log.error(
+            '❌ Error: "$flavorToDelete" is not a valid Dart identifier.');
         return;
       }
 
@@ -40,8 +39,10 @@ class DeleteCommand {
 
     if (flavors.length == 2) {
       _log.warn('⚠️ Warning: Deleting this flavor will leave only one flavor.');
-      _log.warn('This is not recommended. You should perform a full reset instead.');
-      final confirmed = _log.confirm('Would you like to completely reset the project instead?');
+      _log.warn(
+          'This is not recommended. You should perform a full reset instead.');
+      final confirmed = _log
+          .confirm('Would you like to completely reset the project instead?');
       if (confirmed) {
         SetupRunner(logger: _log).reset();
         return;
@@ -54,25 +55,27 @@ class DeleteCommand {
     _log.info('🗑️ Deleting flavor: $flavorToDelete...');
 
     try {
-      final isProduction = flavorToDelete == ConfigService.load().productionFlavor;
+      final isProduction = flavorToDelete == config.productionFlavor;
       ConfigService.removeFlavor(flavorToDelete);
-      final remainingFlavors = ConfigService.load().flavors;
+      final updatedConfig = ConfigService.load();
 
-      if (isProduction && remainingFlavors.isNotEmpty) {
+      if (isProduction && updatedConfig.flavors.isNotEmpty) {
         _log.warn('⚠️ You deleted the production flavor.');
         final newProd = _log.chooseOne(
           '👉 Please select a new production flavor:',
-          choices: remainingFlavors,
+          choices: updatedConfig.flavors,
         );
-        ConfigService.save(ConfigService.load().copyWith(productionFlavor: newProd));
+        ConfigService.save(updatedConfig.copyWith(productionFlavor: newProd));
         _log.info('✔ Production flavor updated to: $newProd');
       }
-      
+
       // Delegate completely to SetupRunner. It handles deleting orphaned files.
-      await SetupRunner(logger: _log).run(ConfigService.load(), skipFirebase: true);
+      await SetupRunner(logger: _log)
+          .run(ConfigService.load(), skipFirebase: true);
 
       _log.success('✅ Flavor "$flavorToDelete" removed successfully!');
     } catch (e) {
+      if (e is CliException && e.isLogged) return;
       _log.error('❌ Failed to delete flavor: $e');
     }
   }

@@ -2,12 +2,13 @@ import 'package:firebase_core/firebase_core.dart';
 import '../firebase_options_dev.dart';
 import '../app_config.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() async {
-  AppConfig.init(Flavor.dev);
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform,);
-
+  await dotenv.load(fileName: '.env.dev');
+  AppConfig.init(Flavor.dev);
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const MyApp());
 }
 

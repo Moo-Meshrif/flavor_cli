@@ -41,51 +41,64 @@ void main() {
       await cmd.execute([]);
 
       // Verify Config File
-      final configFile = File(p.join(sandbox.path, '.flavor_cli.json'));
+      final configFile = File(p.join(sandbox.path, 'flavor_cli.yaml'));
       expect(configFile.existsSync(), isTrue);
-      
+
       final config = ConfigService.load();
       expect(config.flavors, equals(['dev', 'prod']));
       expect(config.appName, equals('TestApp'));
-      expect(config.flavorValues['dev']?['baseUrl'], equals('dev-url'));
+      // Values are no longer persisted in yaml, so we check .env files
+      final envFile = File(p.join(sandbox.path, '.env.dev'));
+      expect(envFile.existsSync(), isTrue);
+      expect(envFile.readAsStringSync(), contains('BASE_URL=dev-url'));
 
       // Verify AppConfig
-      final appConfigFile = File(p.join(sandbox.path, 'lib/core/config/app_config.dart'));
+      final appConfigFile =
+          File(p.join(sandbox.path, 'lib/core/config/app_config.dart'));
       expect(appConfigFile.existsSync(), isTrue);
-      expect(appConfigFile.readAsStringSync(), contains('static late String baseUrl;'));
+      expect(appConfigFile.readAsStringSync(),
+          contains('static String get baseUrl => dotenv.env[\'BASE_URL\'] ?? \'\';'));
 
       // Verify Main Files
-      expect(File(p.join(sandbox.path, 'lib/main/main_dev.dart')).existsSync(), isTrue);
-      expect(File(p.join(sandbox.path, 'lib/main/main_prod.dart')).existsSync(), isTrue);
+      expect(File(p.join(sandbox.path, 'lib/main/main_dev.dart')).existsSync(),
+          isTrue);
+      expect(File(p.join(sandbox.path, 'lib/main/main_prod.dart')).existsSync(),
+          isTrue);
     });
 
     test('Init from file', () async {
-      final configFile = File(p.join(sandbox.path, '.flavor_cli.json'));
+      final configFile = File(p.join(sandbox.path, 'flavor_cli.yaml'));
       await configFile.writeAsString('''
-{
-  "flavors": ["dev", "prod"],
-  "app_name": "TestApp",
-  "fields": {"api": "String"},
-  "values": {
-    "dev": {"api": "dev"},
-    "prod": {"api": "prod"}
-  },
-  "app_config_path": "lib/app_config.dart",
-  "use_separate_mains": false,
-  "use_suffix": true,
-  "android": {"application_id": "com.ex"},
-  "ios": {"bundle_id": "com.ex"},
-  "production_flavor": "prod"
-}
+flavors:
+  - dev
+  - prod
+app_name: TestApp
+fields:
+  api: String
+values:
+  dev:
+    api: dev
+  prod:
+    api: prod
+app_config_path: lib/app_config.dart
+use_separate_mains: false
+use_suffix: true
+android:
+  application_id: com.ex
+ios:
+  bundle_id: com.ex
+production_flavor: prod
 ''');
 
       final logger = FakeAppLogger(prompts: [], choices: []);
       final cmd = InitCommand(logger: logger);
-      await cmd.execute(['--from', configFile.path]); // Use flag to trigger InitFromFile
+      await cmd.execute(
+          ['--from', configFile.path]); // Use flag to trigger InitFromFile
 
       final appConfigFile = File(p.join(sandbox.path, 'lib/app_config.dart'));
       expect(appConfigFile.existsSync(), isTrue);
-      expect(appConfigFile.readAsStringSync(), contains('static late String api;'));
+      expect(appConfigFile.readAsStringSync(),
+          contains('static String get api => dotenv.env[\'API\'] ?? \'\';'));
     });
   });
 }

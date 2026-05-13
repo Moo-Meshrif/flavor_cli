@@ -4,26 +4,27 @@ import '../services/config_service.dart';
 import '../services/file_service.dart';
 import '../models/flavor_config.dart';
 import '../utils/logger.dart';
+import '../utils/exceptions.dart';
 
+/// Command to set up and configure Firebase for different flavors.
 class FirebaseCommand {
   final AppLogger _log;
   final bool fromHook;
 
+  /// Creates a new [FirebaseCommand] with an optional [logger].
   FirebaseCommand({AppLogger? logger, this.fromHook = false})
       : _log = logger ?? AppLogger();
 
+  /// Executes the Firebase configuration process.
+  /// If [targetFlavor] is provided, only that flavor is configured.
   Future<void> execute({String? targetFlavor}) async {
     if (!ConfigService.isValidProject(_log)) return;
-
-    if (!ConfigService.isInitialized()) {
-      _log.error('❌ flavor_cli: project not initialized');
-      return;
-    }
+    if (!ConfigService.requiresInitialized(_log)) return;
 
     var config = ConfigService.load();
     if (config.firebase == null) {
       final confirmed = _log.confirm(
-        '🔥 No Firebase configuration found in .flavor_cli.json. Would you like to set it up now?',
+        '🔥 No Firebase configuration found in flavor_cli.yaml. Would you like to set it up now?',
         defaultValue: true,
       );
 
@@ -35,7 +36,7 @@ class FirebaseCommand {
       final firebaseConfig = _promptForFirebaseConfig(config);
       config = config.copyWith(firebase: firebaseConfig);
       ConfigService.save(config);
-      _log.success('📝 Firebase configuration saved to .flavor_cli.json');
+      _log.success('📝 Firebase configuration saved to flavor_cli.yaml');
     }
 
     // 1. Check flutterfire
@@ -103,6 +104,7 @@ class FirebaseCommand {
     }
 
     _log.success('✅ Firebase setup completed for all targets.');
+    FileService.updateVSCodeLaunchConfig();
   }
 
   Future<void> _runConfigure({
@@ -125,16 +127,92 @@ class FirebaseCommand {
       '--yes',
     ];
 
+    // We use inheritStdio to keep the interactive feel and colors,
+    // but we'll check the exit code and logs if it fails.
     final result = await Process.start('flutterfire', args,
         mode: ProcessStartMode.inheritStdio);
     final exitCode = await result.exitCode;
 
     if (exitCode != 0) {
-      throw Exception('flutterfire configure failed for $label');
+      _log.error('❌ flutterfire configure failed for $label');
+
+      // Try to diagnose the error from firebase-debug.log
+      final debugLog = File(p.join(ConfigService.root, 'firebase-debug.log'));
+      if (debugLog.existsSync()) {
+        final content = debugLog.readAsStringSync();
+        if (content.contains('RESOURCE_EXHAUSTED') ||
+            content.contains('Too many Apps on project')) {
+          _log.warn('\n⚠️  FIREBASE APP LIMIT REACHED');
+          _log.info(
+              '   Your Firebase project "$projectId" has reached the maximum number of apps.');
+          _log.info(
+              '   This usually happens after multiple flavor renames, as old apps are not automatically deleted.');
+          _log.info('\n👉 Solution:');
+          _log.info(
+              '   1. Go to Firebase Console: https://console.firebase.google.com/project/$projectId/settings/general');
+          _log.info(
+              '   2. Remove unused apps (e.g., old package names from previous flavor names).');
+          _log.info('   3. Re-run this command.');
+
+          final config = ConfigService.loadLenient();
+          if (config != null) {
+            final baseId = config.android.applicationId;
+            final prodFlavor = config.productionFlavor;
+            final useSuffix = config.useSuffix;
+
+            final currentIds = <String>{};
+            for (final f in config.flavors) {
+              if (useSuffix && f != prodFlavor) {
+                currentIds.add('$baseId.$f');
+              } else {
+                currentIds.add(baseId);
+              }
+            }
+            // Always ensure base ID is included if not already
+            currentIds.add(baseId);
+
+            _log.info('\n💡 Note: Your current configuration uses:');
+            for (final id in currentIds) {
+              _log.info('      - $id');
+            }
+          }
+        } else if (content.contains('PERMISSION_DENIED')) {
+          _log.warn('\n⚠️  FIREBASE PERMISSION DENIED');
+          _log.info(
+              '   The account logged into Firebase CLI does not have access to project "$projectId".');
+          _log.info('\n👉 Solution:');
+          _log.info('   1. Run: firebase login');
+          _log.info(
+              '   2. Ensure you have "Editor" or "Owner" permissions on project "$projectId".');
+        } else if (content.contains('Failed to create Android app') ||
+            content.contains('AlreadyExists')) {
+          _log.warn('\n⚠️  FIREBASE APP CONFLICT');
+          _log.info(
+              '   Firebase failed to register the Android app "$packageId".');
+          _log.info(
+              '   This often means the package ID is already registered in another Firebase project.');
+          _log.info('\n👉 Solution:');
+          _log.info(
+              '   1. Check if "$packageId" is already used in a different Firebase project.');
+          _log.info(
+              '   2. If it is, you must remove it there before registering it in "$projectId".');
+        } else {
+          // General advice for other errors
+          _log.info('\nℹ️  Check firebase-debug.log for more details.');
+        }
+      }
+
+      throw CliException(
+        'flutterfire configure failed for $label.',
+        isLogged: true,
+      );
     }
   }
 
-  FirebaseConfig _promptForFirebaseConfig(FlavorConfig config) {
+  /// Prompts the user for Firebase configuration. Reused by [InitWizard]
+  /// to avoid duplicating the strategy/project-ID prompt logic.
+  static FirebaseConfig promptForFirebaseConfig(
+      AppLogger log, FlavorConfig config) {
     final useSuffix = config.useSuffix;
     final List<String> strategyChoices;
 
@@ -150,12 +228,12 @@ class FirebaseCommand {
     }
 
     final selectedStrategy = strategyChoices.length > 1
-        ? _log.chooseOne('👉 Which Firebase strategy do you prefer?',
+        ? log.chooseOne('👉 Which Firebase strategy do you prefer?',
             choices: strategyChoices)
         : strategyChoices.first;
 
     if (strategyChoices.length == 1) {
-      _log.info(
+      log.info(
           'ℹ️ Using Firebase strategy: $selectedStrategy (matches your "Shared ID" strategy)');
     }
 
@@ -163,11 +241,11 @@ class FirebaseCommand {
     if (selectedStrategy == 'unique_id_multi_project') {
       for (final flavor in config.flavors) {
         final projectId =
-            _log.prompt('👉 Enter Firebase Project ID for flavor "$flavor":');
+            log.prompt('👉 Enter Firebase Project ID for flavor "$flavor":');
         projects[flavor] = projectId;
       }
     } else {
-      final projectId = _log.prompt('👉 Enter your Firebase Project ID:');
+      final projectId = log.prompt('👉 Enter your Firebase Project ID:');
       projects['all'] = projectId;
     }
 
@@ -176,6 +254,9 @@ class FirebaseCommand {
       projects: projects,
     );
   }
+
+  FirebaseConfig _promptForFirebaseConfig(FlavorConfig config) =>
+      promptForFirebaseConfig(_log, config);
 
   Future<bool> _checkCommand(String command) async {
     try {

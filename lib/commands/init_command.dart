@@ -4,12 +4,16 @@ import '../services/config_service.dart';
 import '../utils/logger.dart';
 import 'init_from_file.dart';
 import 'init_wizard.dart';
+import '../utils/exceptions.dart';
 
+/// Command to initialize the project with flavor configuration.
 class InitCommand {
   final AppLogger _log;
 
+  /// Creates a new [InitCommand] with an optional [logger].
   InitCommand({AppLogger? logger}) : _log = logger ?? AppLogger();
 
+  /// Starts the initialization wizard or loads from a file if the '--from' flag is provided.
   Future<void> execute(List<String> args) async {
     if (!ConfigService.isValidProject(_log)) return;
 
@@ -31,7 +35,12 @@ class InitCommand {
     } on FormatException catch (e) {
       _log.error('❌ Error parsing arguments: ${e.message}');
     } catch (e) {
-      _log.error('❌ Unexpected error: $e');
+      if (e is CliException && e.isLogged) {
+        // Already reported, just exit gracefully
+        return;
+      }
+      final msg = e is CliException ? '$e' : 'Unexpected error: $e';
+      _log.error('❌ $msg');
     }
   }
 }

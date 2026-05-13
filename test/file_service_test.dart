@@ -4,6 +4,7 @@ import 'package:path/path.dart' as p;
 import 'package:flavor_cli/services/config_service.dart';
 import 'package:flavor_cli/services/file_service.dart';
 import 'package:flavor_cli/models/flavor_config.dart';
+import 'package:flavor_cli/services/runtime_config_service.dart';
 
 void main() {
   late Directory tempDir;
@@ -78,24 +79,25 @@ void main() {
       final config = ConfigService.load().copyWith(useSeparateMains: false);
       ConfigService.save(config);
 
-      FileService.integrateMainFiles(flavors: ['dev', 'prod'], separate: false);
+      RuntimeConfigService().integrateMainFile(mainFile.path, config);
 
       final content = mainFile.readAsStringSync();
       expect(content, contains("import 'app_config.dart';"));
       expect(content, contains('AppConfig.init(flavor);'));
-      expect(content, contains("String.fromEnvironment('FLAVOR')"));
+      expect(content, contains('await dotenv.load'));
     });
 
-    test('createAppConfig generates valid dart file with switch', () {
-      FileService.createAppConfig();
+    test('RuntimeConfigService generates valid ENV-based AppConfig', () {
+      final config = ConfigService.load();
+      RuntimeConfigService().generateAppConfig(config);
       final path = p.join(ConfigService.root, 'lib/app_config.dart');
       final file = File(path);
 
       expect(file.existsSync(), isTrue);
       final content = file.readAsStringSync();
       expect(content, contains('enum Flavor { dev, prod }'));
-      expect(content, contains('case Flavor.dev:'));
-      expect(content, contains('baseUrl = \'FILL_ME\';'));
+      expect(content, contains('static String get baseUrl => dotenv.env[\'BASE_URL\'] ?? \'\';'));
+      expect(content, isNot(contains('case Flavor.dev:')));
     });
   });
 }

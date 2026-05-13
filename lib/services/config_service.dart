@@ -1,19 +1,21 @@
-// flavor_cli: modified
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'package:yaml/yaml.dart';
+import 'package:yaml_edit/yaml_edit.dart';
 import '../models/flavor_config.dart';
 import '../models/config_validator.dart';
 import '../utils/logger.dart';
 import '../utils/type_utils.dart';
+import '../utils/yaml_utils.dart';
 
+/// Service for managing the flavor_cli configuration file (YAML).
 class ConfigService {
+  /// The root directory of the project.
   static String root = '.';
-  static String get _configPath => p.join(root, '.flavor_cli.json');
+  static String get _configPath => p.join(root, 'flavor_cli.yaml');
 
-  // ========================
-  // PROJECT VALIDATION
-  // ========================
+  /// Returns true if the current directory is a valid Flutter project root.
   static bool isValidProject(AppLogger log) {
     if (!File(p.join(root, 'pubspec.yaml')).existsSync()) {
       log.error(
@@ -38,45 +40,101 @@ class ConfigService {
   // ========================
   // IS INITIALIZED
   // ========================
+  /// Returns true if the project has been initialized with flavor_cli.
   static bool isInitialized() {
-    return File(_configPath).existsSync();
+    return File(_configPath).existsSync() ||
+        File(p.join(root, '.flavor_cli.json')).existsSync();
+  }
+
+  /// Returns false and logs an error if not initialized. Use in commands to
+  /// avoid duplicating the "Run init first" message.
+  static bool requiresInitialized(AppLogger log) {
+    if (!isInitialized()) {
+      log.error('❌ Error: Project not initialized. Run "init" first.');
+      return false;
+    }
+    return true;
   }
 
   // ========================
   // LOAD CONFIG
   // ========================
+  /// Loads the flavor configuration from the YAML file.
+  /// If [excludeValidation] is true, the config is loaded without full validation.
   static FlavorConfig load([bool excludeValidation = false]) {
+    // Check for legacy JSON first for seamless loading before migration
+    final legacyFile = File(p.join(root, '.flavor_cli.json'));
+    if (legacyFile.existsSync() && !File(_configPath).existsSync()) {
+      try {
+        final content = legacyFile.readAsStringSync();
+        final jsonMap = jsonDecode(content) as Map<String, dynamic>;
+        if (excludeValidation) return FlavorConfig.fromJson(jsonMap);
+        return ConfigValidator.validate(jsonMap);
+      } catch (e) {
+        // Fallthrough to yaml error
+      }
+    }
+
     final file = File(_configPath);
     if (!file.existsSync()) {
       throw Exception(
-          '❌ flavor_cli: .flavor_cli.json not found. Run init first.');
+          '❌ flavor_cli: flavor_cli.yaml not found. Run init first.');
     }
 
     try {
       final content = file.readAsStringSync();
-      final jsonMap = jsonDecode(content) as Map<String, dynamic>;
+      final yamlMap = loadYaml(content);
+      final jsonMap = YamlUtils.yamlToMap(yamlMap);
 
       if (excludeValidation) {
         return FlavorConfig.fromJson(jsonMap);
       }
 
       // Will throw FormatException with properly formatted error if invalid
-      return ConfigValidator.validate(jsonMap);
+      try {
+        return ConfigValidator.validate(jsonMap);
+      } on FormatException catch (e) {
+        // Self-healing: If the ONLY issue is the production_flavor, and we have flavors, fix it.
+        if (e.message.contains('production_flavor') &&
+            !e.message.contains('application_id') &&
+            !e.message.contains('bundle_id')) {
+          final config = FlavorConfig.fromJson(jsonMap);
+          if (config.flavors.isNotEmpty &&
+              !config.flavors.contains(config.productionFlavor)) {
+            final repaired =
+                config.copyWith(productionFlavor: config.flavors.first);
+            save(repaired);
+            return repaired;
+          }
+        }
+        rethrow;
+      }
     } on FormatException {
       rethrow;
     } catch (e) {
-      throw FormatException('❌ flavor_cli: invalid config JSON format.\n$e');
+      throw FormatException('❌ flavor_cli: invalid config YAML format.\n$e');
     }
   }
 
   /// Loads configuration without strict validation. Useful for migration or partial reads.
   static FlavorConfig? loadLenient() {
     final file = File(_configPath);
-    if (!file.existsSync()) return null;
+    if (!file.existsSync()) {
+      final legacyFile = File(p.join(root, '.flavor_cli.json'));
+      if (!legacyFile.existsSync()) return null;
+      try {
+        final content = legacyFile.readAsStringSync();
+        final jsonMap = jsonDecode(content) as Map<String, dynamic>;
+        return FlavorConfig.fromJson(jsonMap);
+      } catch (_) {
+        return null;
+      }
+    }
 
     try {
       final content = file.readAsStringSync();
-      final jsonMap = jsonDecode(content) as Map<String, dynamic>;
+      final yamlMap = loadYaml(content);
+      final jsonMap = YamlUtils.yamlToMap(yamlMap);
       return FlavorConfig.fromJson(jsonMap);
     } catch (_) {
       return null;
@@ -86,11 +144,32 @@ class ConfigService {
   // ========================
   // SAVE CONFIG
   // ========================
+  /// Saves the flavor configuration to the YAML file.
   static void save(FlavorConfig config) {
+    final json = config.toJson();
+
+    // Values live in .env files — don't persist them in the YAML.
+    json.remove('values');
+
     final file = File(_configPath);
-    file.writeAsStringSync(
-      const JsonEncoder.withIndent('  ').convert(config.toJson()),
-    );
+    String existingContent = '';
+    if (file.existsSync()) {
+      existingContent = file.readAsStringSync();
+    }
+
+    // We use YamlEditor to cleanly generate or update the YAML
+    final editor = YamlEditor(existingContent);
+    try {
+      editor.update([], json);
+    } catch (e) {
+      // If update fails on root, recreate
+      final freshEditor = YamlEditor('');
+      freshEditor.update([], json);
+      file.writeAsStringSync(freshEditor.toString());
+      return;
+    }
+
+    file.writeAsStringSync(editor.toString());
   }
 
   // ========================
@@ -139,10 +218,17 @@ class ConfigService {
           Map<String, Map<String, dynamic>>.from(config.flavorValues)
             ..remove(flavor);
 
-      final updatedConfig = config.copyWith(
+      var updatedConfig = config.copyWith(
         flavors: updatedFlavors,
         flavorValues: updatedValues,
       );
+
+      if (updatedConfig.productionFlavor == flavor &&
+          updatedFlavors.isNotEmpty) {
+        updatedConfig =
+            updatedConfig.copyWith(productionFlavor: updatedFlavors.first);
+      }
+
       save(updatedConfig);
     } catch (_) {}
   }
@@ -235,7 +321,8 @@ class ConfigService {
       final libDir = Directory(p.join(root, 'lib'));
       if (libDir.existsSync()) {
         final files = libDir.listSync();
-        if (files.any((f) => p.basename(f.path).startsWith('firebase_options'))) {
+        if (files
+            .any((f) => p.basename(f.path).startsWith('firebase_options'))) {
           return true;
         }
       }

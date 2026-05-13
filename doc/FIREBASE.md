@@ -80,10 +80,12 @@ Depending on your `flavor_cli` configuration, choose the pattern below:
 ```dart
 // lib/main/main_dev.dart
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../firebase_options_dev.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: '.env.dev');
   AppConfig.init(Flavor.dev);
   
   await Firebase.initializeApp(
@@ -100,6 +102,7 @@ void main() async {
 ```dart
 // lib/main.dart
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:<your_project_name>/core/config/app_config.dart';
 import 'firebase_options_dev.dart' as dev;
 import 'firebase_options_prod.dart' as prod;
@@ -110,6 +113,9 @@ void main() async {
   // Custom logic to get current flavor
   const flavorString = String.fromEnvironment('FLAVOR');
   final flavor = _getFlavor(flavorString);
+  
+  // Load environment variables
+  await dotenv.load(fileName: '.env.$flavorString');
   AppConfig.init(flavor);
 
   // Initialize Firebase based on flavor

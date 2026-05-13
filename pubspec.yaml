@@ -1,6 +1,6 @@
 name: flavor_cli
-description: Production-grade Flutter flavor automation CLI
-version: 0.0.7
+description: A production-grade CLI tool for automating Flutter flavor configuration, Firebase environment management, and boilerplate generation for scalable apps.
+version: 0.0.8
 repository: https://github.com/Moo-Meshrif/flavor_cli
 homepage: https://github.com/Moo-Meshrif/flavor_cli
 issue_tracker: https://github.com/Moo-Meshrif/flavor_cli/issues
@@ -19,9 +19,11 @@ false_secrets:
   - /example/lib/firebase_options_stage.dart
 
 dependencies:
-  args: ^2.4.2
-  mason_logger: ^0.2.5
-  path: ^1.9.0
+  args: ^2.7.0
+  mason_logger: ^0.3.5
+  path: ^1.9.1
+  yaml: ^3.1.3
+  yaml_edit: ^2.2.4
 
 executables:
   flavor_cli:
